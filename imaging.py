@@ -65,11 +65,8 @@ n_pix_x, n_pix_y = cfg["sky"].getint("n_pixels_x"), cfg["sky"].getint("n_pixels_
 
 save_strategy = cfg["base"].get("save_strategy", "last")
 
-central_error_log = os.path.join(root_save_directory, "errors.log")
-log_file = os.path.join(root_save_directory, "logs", f"{source_name}_{date}_{seed}.log")
-
-safe_append_file(f"{get_current_time_str()}: Imaging source {source_name} for date {date}, seed {seed}, {map_message}\n", log_file)
-
+central_error_log = os.path.join(root_save_directory, "logs", "errors.log")
+log_file = os.path.join(root_save_directory, "logs", f"{source_name}_{date}.log")
 
 starting_time = datetime.datetime.now()
 
@@ -173,17 +170,21 @@ if map_flag:
 
     def inspect_callback_map(sl, iglobal):
         if iglobal + 1 == n_iterations_map:
+
+            sample_multifield = list(sl.iterator())[0]
+            map_likelihood = likelihood(sample_multifield).val
+
             sky_map = sl.average(sky).val.T[:, :, 0, 0, 0] / (206265 ** 2 * 1000 ** 2)
             noise_level = noise_level_estimation(sky_map)
             sky_pos_mean = plt.pcolormesh(X, Y, np.log10(sky_map), cmap="inferno", vmin=np.log10(noise_level))
             plt.colorbar(sky_pos_mean, label=r"$\log_{10}[I \ (\text{Jy/mas}^2)]$")
-            plt.title(f"MAP {source_name} {date} seed={seed}, iter {iglobal}", fontsize=12)
+            plt.title(f"MAP {source_name} {date} seed={seed}, likelihood={map_likelihood:.0f}", fontsize=12)
             plt.xlabel("Relative RA (mas)", fontsize=11)
             plt.ylabel("Relative Dec (mas)", fontsize=11)
             plt.gca().invert_xaxis()
             save_dir = os.path.join(root_save_directory, "images", source_name, date, "initial_MAP")
             os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(os.path.join(save_dir, f"logsky_{iglobal}_seed_{seed}.png"), bbox_inches="tight", dpi=600)
+            plt.savefig(os.path.join(save_dir, f"{source_name}_{date}_MAP_{seed}.png"), bbox_inches="tight", dpi=600)
             plt.close()
 
     output_directory = os.path.join(root_save_directory, "output_files", source_name, date, "initial_MAP", f"seed_{seed}")
@@ -216,36 +217,29 @@ if map_flag:
     final_map_likelihood = likelihood(sample_multifield).val
     map_sample = sample_multifield
 
-    safe_append_file(f"{get_current_time_str()}: Completed MAP run with seed {seed}. Likelihood: {final_map_likelihood:.2f}\n", log_file)
-
-
 
 def inspect_callback_vi(sl, iglobal):
-    if iglobal % 2 == 1:
+    if iglobal + 1 == n_iterations_vi:
+        vi_samples_multifield = list(sl.iterator())
+        average_likelihood = sum([likelihood(vi_sample_multifield).val for vi_sample_multifield in vi_samples_multifield]) / len(vi_samples_multifield)
+
         sky_map = sl.average(sky).val.T[:, :, 0, 0, 0] / (206265 ** 2 * 1000 ** 2)
         noise_level = noise_level_estimation(sky_map)
         sky_pos_mean = plt.pcolormesh(X, Y, np.log10(sky_map), cmap="inferno", vmin=np.log10(noise_level))
         plt.colorbar(sky_pos_mean, label=r"$\log_{10}[I \ (\text{Jy/mas}^2)]$")
-        plt.title(f"VI {source_name} {date}, seed {seed}, {map_message}", fontsize=12)
+        plt.title(f"VI {source_name} {date}, seed {seed}, {map_message}, likelihood={average_likelihood:.0f}", fontsize=12)
         plt.xlabel("Relative RA (mas)", fontsize=11)
         plt.ylabel("Relative Dec (mas)", fontsize=11)
         plt.gca().invert_xaxis()
-        if iglobal == n_iterations_vi - 1:
-            save_dir = os.path.join(root_save_directory, "images", source_name, "final_VI")
-        else:
-            save_dir = os.path.join(root_save_directory, "images", source_name, date)
+        save_dir = os.path.join(root_save_directory, "images", source_name, date)
         
         os.makedirs(save_dir, exist_ok=True)
 
-        plt.savefig(os.path.join(save_dir, f"{source_name}_{date}_VI_{seed}_iter{iglobal}.png"), bbox_inches="tight", dpi=600)
+        plt.savefig(os.path.join(save_dir, f"{source_name}_{date}_VI_{seed}.png"), bbox_inches="tight", dpi=600)
         plt.close()
 
 output_directory = os.path.join(root_save_directory, "output_files", source_name, date, f"seed_{seed}")
 os.makedirs(output_directory, exist_ok=True)
-
-with open(log_file, "a") as text_file:
-    text_file.write(f"{get_current_time_str()}: Starting VI for source {source_name}, date {date}, seed {seed}, {map_message}.\n")
-
 
 try:
     vi_samples = ift.optimize_kl(likelihood_energy=likelihood,
@@ -277,11 +271,8 @@ average_likelihood = sum([likelihood(vi_sample_multifield).val for vi_sample_mul
 ending_time = datetime.datetime.now()
 timedelta = ending_time - starting_time
 
-safe_append_file(f"{get_current_time_str()}: Finished VI for source {source_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}\n", log_file)
-safe_append_file(f"Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours\n", log_file)
+safe_append_file(f"{get_current_time_str()}: Finished VI for source {source_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}. Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours\n", log_file)
 
-
-print(f"Finished for seed {seed}. Final likelihood: {average_likelihood:.2f}")
 
 # Creating gain plots for every date
 # create_gain_plots(root_save_directory, obs, source_name, date)

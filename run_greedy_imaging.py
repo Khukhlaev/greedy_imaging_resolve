@@ -33,6 +33,7 @@ random_seeds = np.random.randint(0, 10000, size=n_map_runs+n_vi_standalone_runs)
 
 
 data_store_dir = "./ms_data"
+os.makedirs(data_store_dir, exist_ok=True)
 get_ms_data_path(data_store_dir, cfg['observation']['source_name'].strip(), cfg['observation']['date'].strip(), "uvf_raw_edt")
 
 os.makedirs("./tmp_configs", exist_ok=True)
@@ -57,7 +58,6 @@ def submit_run(idx):
 
     proc = subprocess.run(["python","imaging.py","--config",str(tmp_conf)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     tmp_conf.unlink(missing_ok=True)
-    print(proc.stdout, end="\n")
     return proc.returncode
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONC) as ex:
