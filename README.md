@@ -1,6 +1,8 @@
 # greedy_imaging_resolve
 
-Scripts for computationally expensive and effective imaging with resolve. Best used for specific source and date, with the examination of the results by eye.
+Scripts for computationally expensive and effective imaging with resolve. Best used for specific source and date, with the examination of the results by eye. 
+
+Main idea is running $N+M$ VIs with different random seeds, where $N$ are started from the corresponding MAP estimation, and $M$ are started from the Gaussian prior. 
 
 ## Setup
 
