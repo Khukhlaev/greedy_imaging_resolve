@@ -49,7 +49,7 @@ def get_zeromode_offset(fov, visibility_vals):
     return zeromode_offset
 
 
-def combine_spectral_windows(store_dir: str, uvf_path: str, gz_flag: str) -> str:
+def combine_spectral_windows(store_dir: str, uvf_path: str, gz_suffix: str) -> str:
     """
     Combining spectral windows with ehtim.
     
@@ -57,6 +57,8 @@ def combine_spectral_windows(store_dir: str, uvf_path: str, gz_flag: str) -> str
     :type store_dir: str
     :param uvf_path: original uvf filepath
     :type uvf_path: str
+    :param gz_suffix: suffix for gzipped files, either ".gz" or ""
+    :type gz_suffix: str
     :return: temporary filepath of the uvf file with comined spectral windows
     :rtype: str
     """
@@ -66,7 +68,7 @@ def combine_spectral_windows(store_dir: str, uvf_path: str, gz_flag: str) -> str
     tmp_dir = os.path.join(store_dir, "tmp")
     os.makedirs(tmp_dir, exist_ok=True)
 
-    if gz_flag == ".gz":
+    if gz_suffix == ".gz":
         tmp_file = os.path.join(tmp_dir, f"combined_{os.path.basename(uvf_path)[:-3]}")
     else:
         tmp_file = os.path.join(tmp_dir, f"combined_{os.path.basename(uvf_path)}")
@@ -76,18 +78,38 @@ def combine_spectral_windows(store_dir: str, uvf_path: str, gz_flag: str) -> str
     return tmp_file
 
 
-def get_ms_data_path(store_dir: str, source: str, date: str, visibility_type: str) -> str:
+def get_source_date_type(uvf_path: str) -> tuple:
+    """
+    Extract source name and date from the uvf file path.
+    
+    :param uvf_path: path to the uvf file
+    :type uvf_path: str
+    :return: tuple of (source_name, date, visibility_type, gz_suffix)
+    :rtype: tuple
+    """
+    header = fits.getheader(uvf_path)
+    extension = os.path.basename(uvf_path).split('.')[-1]
+    base_extension = os.path.basename(uvf_path).split('.')[-2]
+    gz_suffix = ".gz" if extension == "gz" else ""
+    visibility_type = base_extension if gz_suffix else extension
+
+    return header['OBJECT'], header['DATE-OBS'].replace('-', '_'), visibility_type, gz_suffix
+
+
+def get_ms_data_path(store_dir: str, uvf_file: str = None, source: str = None, date: str = None, visibility_type: str = None) -> str:
     """
     Get the measurement set data path. If the measurement set does not exist, convert from UVF to MS format combining spectral channels.
     In the case of uvf_raw, also average the data in time with 10s bins.
 
     :param store_dir: path to the direcrory where ms data will be stored
     :type store_dir: str
-    :param source: name of the source. Example: "0506+056"
+    :param uvf_file: path to the uvf file. If not provided, the function will use the source name and date to attempt to load MOJAVE data.
+    :type uvf_file: str
+    :param source: name of the source. Example: "0506+056". Required if uvf_file is not provided.
     :type source: str
-    :param date: date of observation in "YYYY_MM_DD" format. Example: "2025_06_01"
+    :param date: date of observation in "YYYY_MM_DD" format. Example: "2025_06_01". Required if uvf_file is not provided.
     :type date: str
-    :param visibility_type: type of visibility data. Possible types: "uvf", "uvf_raw_edt". "uvf_raw" is not implemented yet.
+    :param visibility_type: type of visibility data. Possible types: "uvf", "uvf_raw_edt". "uvf_raw" is not implemented yet. Required if uvf_file is not provided.
     :type visibility_type: str
     :return: path to the measurement set folder
     :rtype: str
@@ -96,19 +118,21 @@ def get_ms_data_path(store_dir: str, source: str, date: str, visibility_type: st
     if visibility_type == "uvf_raw":
         raise NotImplementedError("support for uvf_raw data is not implemented yet")
 
+    if uvf_file is not None:
+        source, date, visibility_type, gz_suffix = get_source_date_type(uvf_file)
+        uvf_path = uvf_file
+    else:
+        gz_suffix = "" if visibility_type=="uvf" else ".gz"
+        uvf_path = f"/aux/zeall/2cmVLBA/data/{source}/{date}/{source}.u.{date}.{visibility_type}{gz_suffix}"
 
     ms_path = os.path.join(store_dir, source, f"{source}.u.{date}.{visibility_type}.ms")
 
     if os.path.exists(ms_path) and visibility_type != "uvf_raw":
         return ms_path
     
-    
     os.makedirs(os.path.dirname(ms_path), exist_ok=True)
     
-    gz_flag = "" if visibility_type=="uvf" else ".gz"
-    uvf_path = f"/aux/zeall/2cmVLBA/data/{source}/{date}/{source}.u.{date}.{visibility_type}{gz_flag}"
-
-    uvf_path = combine_spectral_windows(store_dir, uvf_path, gz_flag)
+    uvf_path = combine_spectral_windows(store_dir, uvf_path, gz_suffix)
 
     UV = UVData()
     UV.read_uvfits(uvf_path)

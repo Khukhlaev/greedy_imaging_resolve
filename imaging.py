@@ -14,7 +14,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import configparser
 import argparse
-import re
 import sys
 
 import shutil
@@ -22,7 +21,7 @@ from tqdm import tqdm
 
 import datetime
 
-from utils.utilities import get_zeromode_offset, get_ms_data_path, get_clean_params, safe_append_file
+from utils.utilities import get_zeromode_offset, get_ms_data_path, get_clean_params, safe_append_file, get_source_date_type
 from utils.sky_model import sky_model_diffuse
 from utils.calibration_operator import get_calibration_operator
 from utils.image_helper import noise_level_estimation, create_gain_plots, create_movie
@@ -40,13 +39,17 @@ cfg = configparser.ConfigParser()
 cfg.read(args.config)
 
 cfg_observation = cfg["observation"]
-source_name = cfg_observation["source_name"].strip()
-date = cfg_observation["date"].strip()
+data_file = cfg_observation.get("data_file", "None").strip()
+if data_file.lower() != "none":
+    source_name, date, visibility_type, _ = get_source_date_type(data_file)
+else:
+    source_name = cfg_observation["source_name"].strip()
+    date = cfg_observation["date"].strip()
+    visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
 
 sys_error_percentage = cfg_observation.getfloat("sys_error_percentage")
 spectral_window = cfg_observation.getint("spectral_window")
 polarizations = cfg_observation["polarizations"]
-visibility_type = cfg_observation.get("visibility_type", "uvf")
 
 seed = cfg["base"].getint("seed")
 np.random.seed(seed)
@@ -81,7 +84,10 @@ fov = (imsize[0] * pixscale, imsize[1] * pixscale)  # in mas
 
 ### 1. loading data
 try:
-    data_path = get_ms_data_path("./ms_data", source_name, date, visibility_type)
+    if data_file.lower() != "none":
+        data_path = get_ms_data_path("./ms_data", uvf_file=data_file)
+    else:
+        data_path = get_ms_data_path("./ms_data", source=source_name, date=date, visibility_type=visibility_type)
     obs = rve.ms2observations(ms = data_path, data_column = "DATA",with_calib_info= True,spectral_window= spectral_window,polarizations= polarizations)
 
 except Exception as e:
