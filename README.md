@@ -6,7 +6,7 @@ Main idea is running $N+M$ VIs with different random seeds, where $N$ are starte
 
 ## Setup
 
-Prerequisites: Python version 3.10 or later, C++17 capable compiler (e.g. g++7 or later)
+Prerequisites: Python version 3.11 or later, C++17 capable compiler (e.g. g++7 or later)
 
 To install all required packages, run
 
