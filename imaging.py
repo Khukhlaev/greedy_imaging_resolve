@@ -7,7 +7,6 @@ os.environ["VECLIB_MAXIMUM_THREADS"] = "1" # export VECLIB_MAXIMUM_THREADS=1
 os.environ["NUMEXPR_NUM_THREADS"] = "1" # export NUMEXPR_NUM_THREADS=1
 
 
-
 import resolve as rve
 import nifty8 as ift
 import numpy as np
@@ -16,15 +15,14 @@ import configparser
 import argparse
 import sys
 
-import shutil
-from tqdm import tqdm
+import pandas as pd
 
 import datetime
 
-from utils.utilities import get_zeromode_offset, get_ms_data_path, get_clean_params, safe_append_file, get_source_date_type
+from utils.utilities import get_zeromode_offset, get_ms_data_path, get_clean_params, safe_append_file, get_source_date_type, safe_append_row
 from utils.sky_model import sky_model_diffuse
 from utils.calibration_operator import get_calibration_operator
-from utils.image_helper import noise_level_estimation, create_gain_plots, create_movie
+from utils.image_helper import noise_level_estimation, create_gain_plots
 
 def get_current_time_str():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -40,12 +38,25 @@ cfg.read(args.config)
 
 cfg_observation = cfg["observation"]
 data_file = cfg_observation.get("data_file", "None").strip()
-if data_file.lower() != "none":
-    source_name, date, visibility_type, _ = get_source_date_type(data_file)
-else:
-    source_name = cfg_observation["source_name"].strip()
-    date = cfg_observation["date"].strip()
-    visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
+
+root_save_directory = cfg["base"]["root_output_directory"]
+os.makedirs(root_save_directory, exist_ok=True)
+os.makedirs(os.path.join(root_save_directory, "logs"), exist_ok=True)
+os.makedirs(os.path.join(root_save_directory, "logs", "csv_files"), exist_ok=True)
+
+central_error_log = os.path.join(root_save_directory, "logs", "errors.log")
+
+
+try:
+    if data_file.lower() != "none" and data_file != "__DATA_FILE__":
+        source_name, date, visibility_type, _ = get_source_date_type(data_file)
+    else:
+        source_name = cfg_observation["source_name"].strip()
+        date = cfg_observation["date"].strip()
+        visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
+except Exception as e:
+    safe_append_file(f"{get_current_time_str()}: Error parsing source name, date or visibility type from config. Error: {e}\n", central_error_log)
+    sys.exit()
 
 sys_error_percentage = cfg_observation.getfloat("sys_error_percentage")
 spectral_window = cfg_observation.getint("spectral_window")
@@ -55,11 +66,6 @@ seed = cfg["base"].getint("seed")
 np.random.seed(seed)
 ift.random.push_sseq_from_seed(seed)
 
-
-root_save_directory = cfg["base"]["root_output_directory"]
-os.makedirs(root_save_directory, exist_ok=True)
-os.makedirs(os.path.join(root_save_directory, "logs"), exist_ok=True)
-
 map_flag = cfg["optimization"]["map"] == "True"
 map_message = "on top of MAP" if map_flag else "standalone" 
 
@@ -68,7 +74,7 @@ n_pix_x, n_pix_y = cfg["sky"].getint("n_pixels_x"), cfg["sky"].getint("n_pixels_
 
 save_strategy = cfg["base"].get("save_strategy", "last")
 
-central_error_log = os.path.join(root_save_directory, "logs", "errors.log")
+central_csv_log = os.path.join(root_save_directory, "logs", "csv_files", f"{source_name}_{date}.csv")
 log_file = os.path.join(root_save_directory, "logs", f"{source_name}_{date}.log")
 
 starting_time = datetime.datetime.now()
@@ -84,7 +90,7 @@ fov = (imsize[0] * pixscale, imsize[1] * pixscale)  # in mas
 
 ### 1. loading data
 try:
-    if data_file.lower() != "none":
+    if data_file.lower() != "none" and data_file != "__DATA_FILE__":
         data_path = get_ms_data_path("./ms_data", uvf_file=data_file)
     else:
         data_path = get_ms_data_path("./ms_data", source=source_name, date=date, visibility_type=visibility_type)
@@ -279,7 +285,9 @@ timedelta = ending_time - starting_time
 
 safe_append_file(f"{get_current_time_str()}: Finished VI for source {source_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}. Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours\n", log_file)
 
+if not map_flag:
+    final_map_likelihood = pd.NA
+row_dict = {"seed": seed, "MAP": map_flag, "MAP_likelihood": final_map_likelihood, "VI_likelihood": average_likelihood, "time_hours": timedelta.total_seconds() / 3600}
+safe_append_row(central_csv_log, row_dict)
 
-# Creating gain plots for every date
-# create_gain_plots(root_save_directory, obs, source_name, date)
-
+create_gain_plots(root_save_directory, obs, source_name, date, seed)

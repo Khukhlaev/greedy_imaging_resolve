@@ -5,6 +5,8 @@ from pyuvdata import UVData
 
 import fcntl
 
+import pandas as pd
+
 
 from astropy.io import fits
 
@@ -99,7 +101,7 @@ def get_source_date_type(uvf_path: str) -> tuple:
 def get_ms_data_path(store_dir: str, uvf_file: str = None, source: str = None, date: str = None, visibility_type: str = None) -> str:
     """
     Get the measurement set data path. If the measurement set does not exist, convert from UVF to MS format combining spectral channels.
-    In the case of uvf_raw, also average the data in time with 10s bins.
+    uvf_raw is not implemented yet.
 
     :param store_dir: path to the direcrory where ms data will be stored
     :type store_dir: str
@@ -227,5 +229,20 @@ def safe_append_file(text: str, log_file: str) -> None:
         try:
             f.write(text)
             f.flush()
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def safe_append_row(path, row_dict):
+    """Append a row to a CSV file in a thread-safe manner using file locking."""
+    df_row = pd.DataFrame([row_dict])
+    file_exists = os.path.exists(path)
+
+    with open(path, "a", newline="") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            df_row.to_csv(f, header=not file_exists, index=False)
+            f.flush()
+            os.fsync(f.fileno())
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)

@@ -1,15 +1,13 @@
 import os 
 
 import subprocess, concurrent.futures, pathlib
-from datetime import datetime
 import configparser
 import argparse
 
 from utils.utilities import get_ms_data_path, get_source_date_type
+from utils.image_helper import create_movie
 
 import numpy as np
-
-import sys
 
 
 # Setting up argument parser to accept configuration file path
@@ -90,3 +88,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONC) as ex:
             rc = fut.result()
         except Exception as e:
             print("FAILED", seed, e)
+
+
+
+create_movie(root_dir=cfg['base']['root_output_directory'], source=source, date=date, fps=0.5)
