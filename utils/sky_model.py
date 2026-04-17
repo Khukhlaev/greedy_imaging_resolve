@@ -1,7 +1,5 @@
 import nifty8 as ift
-import numpy as np
 
-from resolve.constants import str2rad
 from resolve.polarization_space import PolarizationSpace
 from resolve.sky_model import default_sky_domain
 from resolve.util import assert_sky_domain

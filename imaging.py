@@ -16,10 +16,11 @@ import argparse
 import sys
 
 import pandas as pd
+import pickle
 
 import datetime
 
-from utils.utilities import get_zeromode_offset, get_ms_data_path, get_clean_params, safe_append_file, get_source_date_type, safe_append_row
+from utils.utilities import get_zeromode_offset, get_observation, get_clean_params, safe_append_row, append_message
 from utils.sky_model import sky_model_diffuse
 from utils.calibration_operator import get_calibration_operator
 from utils.image_helper import noise_level_estimation, create_gain_plots
@@ -47,19 +48,11 @@ os.makedirs(os.path.join(root_save_directory, "logs", "csv_files"), exist_ok=Tru
 central_error_log = os.path.join(root_save_directory, "logs", "errors.log")
 
 
-try:
-    if data_file.lower() != "none" and data_file != "__DATA_FILE__":
-        source_name, date, visibility_type, _ = get_source_date_type(data_file)
-    else:
-        source_name = cfg_observation["source_name"].strip()
-        date = cfg_observation["date"].strip()
-        visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
-except Exception as e:
-    safe_append_file(f"{get_current_time_str()}: Error parsing source name, date or visibility type from config. Error: {e}\n", central_error_log)
-    sys.exit()
+source_name = cfg_observation["source_name"].strip()
+date = cfg_observation["date"].strip()
+visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
 
 sys_error_percentage = cfg_observation.getfloat("sys_error_percentage")
-spectral_window = cfg_observation.getint("spectral_window")
 polarizations = cfg_observation["polarizations"]
 
 seed = cfg["base"].getint("seed")
@@ -89,28 +82,16 @@ fov = (imsize[0] * pixscale, imsize[1] * pixscale)  # in mas
 
 
 ### 1. loading data
-try:
-    if data_file.lower() != "none" and data_file != "__DATA_FILE__":
-        data_path = get_ms_data_path("./ms_data", uvf_file=data_file)
-    else:
-        data_path = get_ms_data_path("./ms_data", source=source_name, date=date, visibility_type=visibility_type)
-    obs = rve.ms2observations(ms = data_path, data_column = "DATA",with_calib_info= True,spectral_window= spectral_window,polarizations= polarizations)
-
-except Exception as e:
-    safe_append_file(f"{get_current_time_str()}: Error loading data for source {source_name}, date {date}. Error: {e}.\n", central_error_log)
-
-    sys.exit()
+obs = get_observation("./ms_data", source_name, date, visibility_type, polarizations)
         
-obs = obs[0]
 tmin, tmax = rve.tmin_tmax(obs)
 obs = obs.move_time(-tmin)
 obs = obs.to_double_precision()
 
-zeromode_offset = get_zeromode_offset(fov, obs.vis.val)
+zeromode_offset = get_zeromode_offset(fov, obs.vis.val, obs.uvw)
 
 # add systematic error budget
-new_weight = 1 / ((1 / np.sqrt(obs._weight)) ** 2 + (
-            sys_error_percentage * abs(obs.vis.val)) ** 2)  # 1/ (sigma**2 + (sys_error_percentage*|A|)**2)
+new_weight = obs._weight / (1 + (sys_error_percentage * np.abs(obs.vis.val)) ** 2 * obs._weight)  # sigma_new^2 = sigma^2 + (sys_error_percentage*|V|)^2)
 obs._weight = new_weight
 
 
@@ -222,7 +203,7 @@ if map_flag:
                                 save_strategy="last",
                                 )
     except Exception as e:
-        safe_append_file(f"{get_current_time_str()}: Error during MAP optimization for source {source_name}, date {date}, seed {seed}. Error: {e}\n", central_error_log)
+        append_message(f"{get_current_time_str()}: Error during MAP optimization for source {source_name}, date {date}, seed {seed}. Error: {e}", central_error_log)
         sys.exit()
 
     sample_multifield = list(map_sample.iterator())[0]
@@ -273,7 +254,7 @@ try:
                     initial_position=map_sample
                     )
 except Exception as e:
-    safe_append_file(f"{get_current_time_str()}: Error during VI optimization for source {source_name}, date {date}. Error: {e}\n", central_error_log)
+    append_message(f"{get_current_time_str()}: Error during VI optimization for source {source_name}, date {date}. Error: {e}", central_error_log)
     sys.exit()
 
 
@@ -283,7 +264,7 @@ average_likelihood = sum([likelihood(vi_sample_multifield).val for vi_sample_mul
 ending_time = datetime.datetime.now()
 timedelta = ending_time - starting_time
 
-safe_append_file(f"{get_current_time_str()}: Finished VI for source {source_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}. Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours\n", log_file)
+append_message(f"{get_current_time_str()}: Finished VI for source {source_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}. Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours", log_file)
 
 if not map_flag:
     final_map_likelihood = pd.NA
@@ -291,3 +272,9 @@ row_dict = {"seed": seed, "MAP": map_flag, "MAP_likelihood": final_map_likelihoo
 safe_append_row(central_csv_log, row_dict)
 
 create_gain_plots(root_save_directory, obs, source_name, date, seed)
+
+# Saving final samples
+pickle_file = os.path.join(root_save_directory, "output_files", source_name, date, f"seed_{seed}", "pickle", "final_samples.pickle")
+with open(pickle_file, "wb") as f:
+    pickle.dump(vi_samples_multifield, f, protocol=pickle.HIGHEST_PROTOCOL)
+

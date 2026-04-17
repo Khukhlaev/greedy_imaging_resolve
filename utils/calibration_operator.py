@@ -1,9 +1,19 @@
 import resolve as rve
 import nifty8 as ift
 from .ift_cfm_maker import cfm_from_cfg
-from .utilities import dofdex_or_none
 import ducc0
 import numpy as np
+
+
+def dofdex_or_none(cfg, key, total_N, single_gain = False):
+    if cfg[key] == "False":
+        return None
+    if cfg[key] == "True":
+        if single_gain:
+            return np.arange(total_N) # In the case of one polarization mode, one kernel per antenna
+        return np.hstack([np.arange(total_N//2), np.arange(total_N//2)]) # One kernel per antenna, same for LL and RR
+    else:
+        return np.fromstring(cfg[key], dtype=int, sep=',')
 
 
 
@@ -17,10 +27,11 @@ def get_calibration_operator(cfg, obs, tmin, tmax):
         ducc0.fft.good_size(int(zero_padding_factor * (tmax - tmin) / sol_int)), sol_int
     )
 
-    total_N = 2 * len(uantennas) # 2 pol modes * # antennas = 20
+    total_N = obs.vis.val.shape[0] * len(uantennas) # 1 or 2 pol modes * # antennas 
+    single_gain = obs.vis.val.shape[0] == 1
 
-    dofdex_phase = dofdex_or_none(cfg["gain_phase"], f"diff_correlation_kernels", total_N)
-    dofdex_logamp = dofdex_or_none(cfg["gain_logamplitude"], f"diff_correlation_kernels", total_N)
+    dofdex_phase = dofdex_or_none(cfg["gain_phase"], f"diff_correlation_kernels", total_N, single_gain)
+    dofdex_logamp = dofdex_or_none(cfg["gain_logamplitude"], f"diff_correlation_kernels", total_N, single_gain)
 
     dd = {"time": time_domain}
     cfm_kwargs_phase = {"total_N": total_N, "dofdex":dofdex_phase}
@@ -46,19 +57,19 @@ def get_calibration_operator(cfg, obs, tmin, tmax):
         domain_prefix="gain_logamplitude",
         **cfm_kwargs_logamp,
     ).finalize(0)
-
     
     # if cfg["gain_logamplitude"]["uncorrelated_gain_logamplitude"] == "True":
     #     logamp_ = cfg["gain_logamplitude"].getfloat("uncorrelated_gain_logamplitude_amp") * ift.FieldAdapter(logamp_.target, "gain_logamplitude") 
 
+    pdom, _, fdom = obs.vis.domain
     reshaper = ift.DomainChangerAndReshaper(
-        [ift.UnstructuredDomain(total_N), time_domain],
-        [
-            rve.PolarizationSpace(["LL", "RR"]),
+        phase_.target,
+        (
+            pdom,
             ift.UnstructuredDomain(len(uantennas)),
             time_domain,
-            ift.UnstructuredDomain(obs.nfreq),
-            ]
+            fdom
+        )
     )
 
     phase = reshaper @ phase_

@@ -1,6 +1,6 @@
 # greedy_imaging_resolve
 
-Scripts for computationally expensive and effective imaging with resolve. Best used for specific source and date, with the examination of the results by eye. 
+Scripts for computationally expensive self-calibration and Stokes I imaging with resolve. Best used for specific source and date, with the examination of the results by eye, but (negative log-)likelihood values are provided for possible automatic comparison. Note that smaller values correspond to better fit with the data.
 
 Main idea is running $N+M$ VIs with different random seeds, where $N$ are started from the corresponding MAP estimation, and $M$ are started from the Gaussian prior. 
 
@@ -51,6 +51,10 @@ Two options for providing the data are possible:
 2. Comment `data_file` field out (or set to None) and specify source name and date in the config. In that case, the script will attempt to load the corresponding MOJAVE observations (assuming you have access to the VLBI group data storage system)
 
 Please note that if no number of pixels is provided (are equal to 0 in the config), the script will attempt to use the number of pixels from the corresponding MOJAVE observation, and fail if it does not exist.
+
+Also note that the script will perform weighted averaging on all IF channels in the data. 
+
+Support for the `uvf_raw` data is currently not available. 
 
 ## Analysis
 

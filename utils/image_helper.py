@@ -40,7 +40,7 @@ def create_gain_plots(root_dir, obs, source, date, seed):
     uantennas = rve.unique_antennas(obs)
     station_table = obs._auxiliary_tables['ANTENNA']['STATION']
 
-    overall_title = f"Gain plots - {source}, {date}, seed {seed}"
+    overall_title = f"Gain plots - {source}, {date}, seed={seed}"
     saving_path = os.path.join(root_dir, "images", source, date, "gain_plots")
 
     os.makedirs(saving_path, exist_ok=True)
@@ -162,7 +162,7 @@ def create_gain_plots(root_dir, obs, source, date, seed):
 
     plt.suptitle(overall_title, fontsize=16)
     plt.savefig(os.path.join(saving_path, f"{source}_{date}_seed_{seed}_gains.png"), dpi=600)
-
+    
 
 ########## MOVIES ##############
 
@@ -297,7 +297,7 @@ def create_movie(root_dir, source, date, fps=1):
     """Parent function to create movie of the source"""
     frames_dir = create_movie_frames(root_dir, source, date)
     files = sorted(os.listdir(frames_dir))
-    out_path = os.path.join(root_dir, "images", source, date, f"movie_{source}.mp4")
+    out_path = os.path.join(root_dir, "images", source, date, f"movie_{source}_{date}.mp4")
 
     with imageio.get_writer(out_path, fps=fps, codec='libx264', ffmpeg_params=['-pix_fmt', 'yuv420p']) as writer:
         for fn in files:

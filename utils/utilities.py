@@ -1,12 +1,12 @@
 import resolve as rve
 import numpy as np
 import os
-from pyuvdata import UVData
+
+from collections import OrderedDict
 
 import fcntl
 
 import pandas as pd
-
 
 from astropy.io import fits
 
@@ -18,28 +18,21 @@ def rad_to_mas(rad: float) -> float:
     """Convert radians to milliarcseconds."""
     return rad * (180.0 * 3600.0 * 1000.0) / np.pi
 
-def dofdex_or_none(cfg, key, total_N):
-    if cfg[key] == "False":
-        return None
-    if cfg[key] == "True":
-        return np.hstack([np.arange(total_N//2), np.arange(total_N//2)])
-        #return np.arange(total_N)
-    else:
-        return np.fromstring(cfg[key], dtype=int, sep=',')
 
-def get_zeromode_offset(fov, visibility_vals):
+def get_zeromode_offset(fov, visibility_vals, uvw):
     """
     Calculate the zeromode offset based on visibility values.  
     :param fov: tuple of (fov_x, fov_y) in mas
     :param visibility_vals: visibility values array (created from obs.vis.val)
+    :param uvw: uvw values array (created from obs.uvw)
 
     :return: zeromode offset
     """
+    
+    amp_array = np.mean(np.abs(visibility_vals), axis=0)[:, 0]
 
-    amp_array = 0.5 * (abs(visibility_vals)[0,:,0] + abs(visibility_vals)[1,:,0])
-
-    u = visibility_vals[:,0]
-    v = visibility_vals[:,1]
+    u = uvw[:, 0]
+    v = uvw[:, 1]
     distance = np.sqrt(u ** 2 + v ** 2)
     min_indices = np.argsort(distance.flatten())[:10]
     mindist_10_amp_list = amp_array[min_indices]
@@ -49,35 +42,6 @@ def get_zeromode_offset(fov, visibility_vals):
     zeromode_offset = np.round(np.log(avg_amp / (mas_to_rad(fov_x) * mas_to_rad(fov_y))))
 
     return zeromode_offset
-
-
-def combine_spectral_windows(store_dir: str, uvf_path: str, gz_suffix: str) -> str:
-    """
-    Combining spectral windows with ehtim.
-    
-    :param store_dir: path to the direcrory where ms data will be stored
-    :type store_dir: str
-    :param uvf_path: original uvf filepath
-    :type uvf_path: str
-    :param gz_suffix: suffix for gzipped files, either ".gz" or ""
-    :type gz_suffix: str
-    :return: temporary filepath of the uvf file with comined spectral windows
-    :rtype: str
-    """
-
-    import ehtim as eh
-
-    tmp_dir = os.path.join(store_dir, "tmp")
-    os.makedirs(tmp_dir, exist_ok=True)
-
-    if gz_suffix == ".gz":
-        tmp_file = os.path.join(tmp_dir, f"combined_{os.path.basename(uvf_path)[:-3]}")
-    else:
-        tmp_file = os.path.join(tmp_dir, f"combined_{os.path.basename(uvf_path)}")
-
-    eh.obsdata.load_uvfits(uvf_path).save_uvfits(tmp_file)
-
-    return tmp_file
 
 
 def get_source_date_type(uvf_path: str) -> tuple:
@@ -98,56 +62,127 @@ def get_source_date_type(uvf_path: str) -> tuple:
     return header['OBJECT'], header['DATE-OBS'].replace('-', '_'), visibility_type, gz_suffix
 
 
-def get_ms_data_path(store_dir: str, uvf_file: str = None, source: str = None, date: str = None, visibility_type: str = None) -> str:
+def weighted_average_visibilities(obs_list, decimals=8):
     """
-    Get the measurement set data path. If the measurement set does not exist, convert from UVF to MS format combining spectral channels.
-    uvf_raw is not implemented yet.
+    Weighted average of visibilities, handling possible skipped uvw points for some spectral windows.
 
-    :param store_dir: path to the direcrory where ms data will be stored
-    :type store_dir: str
-    :param uvf_file: path to the uvf file. If not provided, the function will use the source name and date to attempt to load MOJAVE data.
-    :type uvf_file: str
-    :param source: name of the source. Example: "0506+056". Required if uvf_file is not provided.
-    :type source: str
-    :param date: date of observation in "YYYY_MM_DD" format. Example: "2025_06_01". Required if uvf_file is not provided.
-    :type date: str
-    :param visibility_type: type of visibility data. Possible types: "uvf", "uvf_raw_edt". "uvf_raw" is not implemented yet. Required if uvf_file is not provided.
-    :type visibility_type: str
-    :return: path to the measurement set folder
-    :rtype: str
+    Parameters
+    ----------
+    obs_list : list of rve.Observation 
+        list of observations to combine
+
+    Returns
+    -------
+    averaged_obs : rve.Observation
+        observation with correctly averaged visibilies
     """
+    groups = OrderedDict()
 
-    if visibility_type == "uvf_raw":
-        raise NotImplementedError("support for uvf_raw data is not implemented yet")
 
-    if uvf_file is not None:
-        source, date, visibility_type, gz_suffix = get_source_date_type(uvf_file)
-        uvf_path = uvf_file
-    else:
-        gz_suffix = "" if visibility_type=="uvf" else ".gz"
-        uvf_path = f"/aux/zeall/2cmVLBA/data/{source}/{date}/{source}.u.{date}.{visibility_type}{gz_suffix}"
+    for obs in obs_list:
+        vis = obs.vis.val
+        wgt = obs.weight.val
+        uvw = obs.uvw
+
+        if vis.shape != wgt.shape:
+            raise ValueError("vis and wgt must have the same shape")
+        if uvw.shape != (vis.shape[1], 3):
+            raise ValueError("uvw must have shape (N, 3)")
+        
+        valid = np.isfinite(vis) & np.isfinite(wgt) & (wgt > 0)
+
+        for i in range(vis.shape[1]):
+            # Group by UVW, rounded
+            key = tuple(np.round(uvw[i], decimals=decimals))
+
+            if key not in groups:
+                groups[key] = {
+                    "sum_vw": np.zeros(vis[:, i, :].shape, dtype=vis.dtype),
+                    "sum_w": np.zeros(vis[:, i, :].shape, dtype=wgt.dtype),
+                    "time": 0,
+                    "ant1": -1,
+                    "ant2": -1
+                }
+
+            m = valid[:, i, :]               # shape (2, 1)
+            if not np.any(m):
+                continue
+
+            wi = np.where(m, wgt[:, i, :], 0.0)
+            vi = np.where(m, vis[:, i, :], 0.0)
+
+            groups[key]["sum_vw"] += vi * wi
+            groups[key]["sum_w"] += wi
+
+            # Store the first valid time, ant1, ant2 for this UVW group
+            if groups[key]["time"] == 0:
+                groups[key]["time"] = float(obs.time[i])
+                groups[key]["ant1"] = obs.ant1[i]
+                groups[key]["ant2"] = obs.ant2[i]
+
+
+    m = len(groups)
+
+    vis_avg = np.zeros((obs_list[0].vis.val.shape[0], m, 1), dtype=obs_list[0].vis.val.dtype)
+    wgt_new = np.zeros((obs_list[0].vis.val.shape[0], m, 1), dtype=obs_list[0].weight.val.dtype)
+    uvw_new = np.zeros((m, 3), dtype=obs_list[0].uvw.dtype)
+    time_new = np.zeros(m, dtype=obs_list[0].time.dtype)
+    ant1_new = np.zeros(m, dtype=obs_list[0].ant1.dtype)
+    ant2_new = np.zeros(m, dtype=obs_list[0].ant2.dtype)
+
+    for j, (key, acc) in enumerate(groups.items()):
+        sw = acc["sum_w"]
+        svw = acc["sum_vw"]
+
+        out = np.zeros_like(svw, dtype=obs_list[0].vis.val.dtype)
+        np.divide(svw, sw, out=out, where=sw > 0)
+        vis_avg[:, j, :] = out
+
+        wgt_new[:, j, :] = sw
+        uvw_new[j] = np.array(key, dtype=obs_list[0].uvw.dtype)
+        time_new[j] = acc["time"]
+        ant1_new[j] = acc["ant1"]
+        ant2_new[j] = acc["ant2"]
+
+
+    averaged_obs = obs_list[0]
+    averaged_obs._weight = wgt_new
+    averaged_obs._vis = vis_avg
+    averaged_obs._antpos = rve.AntennaPositions(uvw_new, ant1_new, ant2_new, time_new)
+
+    return averaged_obs
+
+
+def get_observation(store_dir, source, date, visibility_type, polarizations="stokesi"):
+    """
+    Get observation, correctly averaging spectral windows. 
+    The function assumes that you have already transformed the original data to the ms format.
+    """
 
     ms_path = os.path.join(store_dir, source, f"{source}.u.{date}.{visibility_type}.ms")
 
-    if os.path.exists(ms_path) and visibility_type != "uvf_raw":
-        return ms_path
+    if not os.path.exists(ms_path):
+        raise FileNotFoundError(f"ms data file does not exist: {ms_path}")
+
+    observations = []
+    spectral_window = 0
+
+    while spectral_window < 100: # Avoiding infinite loop
+        try:
+            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=spectral_window, polarizations=polarizations, ignore_flags=True)[0]
+            observations.append(obs)
+            spectral_window += 1
+        except Exception as e:
+            break
     
-    os.makedirs(os.path.dirname(ms_path), exist_ok=True)
+    if len(observations) == 0:
+        raise RuntimeError("cannot load observation")
     
-    uvf_path = combine_spectral_windows(store_dir, uvf_path, gz_suffix)
+    if spectral_window < 1:
+        return observations[0]
+    
+    return weighted_average_visibilities(observations)
 
-    UV = UVData()
-    UV.read_uvfits(uvf_path)
-    UV.write_ms(ms_path, clobber=True)
-
-    # from casatasks import importuvfits
-
-    # importuvfits(uvf_path, vis=ms_path)
-
-    if os.path.dirname(uvf_path) == os.path.join(store_dir, "tmp"): # Dummy check to avoid deleting original data
-        os.remove(uvf_path)
-
-    return ms_path
 
 def get_clean_params(source: str, date: str) -> dict:
     """
@@ -181,56 +216,51 @@ def get_clean_params(source: str, date: str) -> dict:
     return clean_params
 
 
-def get_good_random_dates(source: str, num_dates: int, visibility_type: str) -> list:
+def append_message(text: str, file, other_file = None) -> None:
     """
-    Get random dates for the source. Ensure corresponding data exist, can be transformed to ms format and loaded to resolve.
-
-    :param source: name of the source. Example: "0506+056"
-    :type source: str
-    :param num_dates: number of dates
-    :type num_dates: int
-    :param visibility_type: type of visibility data. Possible types: "uvf", "uvf_raw", "uvf_raw_edt"
-    :type visibility_type: str
-    :return: list of good dates
-    :rtype: list
-    """
-
-    possible_dates = np.array(os.listdir(f"/aux/zeall/2cmVLBA/data/{source}/"))
-    np.random.shuffle(possible_dates)
-    possible_dates = possible_dates.tolist()
-    good_dates = []
-
-    assert num_dates <= len(possible_dates), "Requested more dates than available."
-
-    while len(good_dates) < num_dates:
-        date = possible_dates.pop()
-        try:
-            data_path = get_ms_data_path(source, date, visibility_type)
-            obs = rve.ms2observations(ms=data_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations="stokesi")
-            good_dates.append(date)
-        except Exception as e:
-            print(f"Error processing {date}: {e}")
-
-    return good_dates
-
-
-
-def safe_append_file(text: str, log_file: str) -> None:
-    """
-    Append a message to the central log file. Uses file locking to prevent concurrent write issues.
+    Append an message to the log file(s). Use file locking to prevent concurrent write issues.
     
-    :param text: The error message to append.
+    :param text: The message to append.
     :type text: str
-    :param log_file: The path to the error log file.
-    :type log_file: str
+    :param file: The path to the log file.
+    :param other_file: optional path to the other log (error) file
     """
-    with open(log_file, "a") as f:
+
+    with open(file, "a") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
-            f.write(text)
+            f.write(text.rstrip() + "\n")
             f.flush()
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
+
+    if other_file is not None:
+        with open(other_file, "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.write(text.rstrip("\n") + "\n")
+                f.flush()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def get_log_filename(root_dir, source):
+    """
+    Get a unique log filename for a given source. If a log file with the source name already exists, append an index to the filename.
+    """
+
+    log_dir = os.path.join(root_dir, "logs")
+    log_filename = f"{source}.log"
+
+    if not os.path.exists(os.path.join(log_dir, log_filename)):
+        return log_filename
+
+    i = 1
+    while i < 1000:  # Arbitrary limit to prevent infinite loop
+        candidate = f"{source}_{i}.log"
+        if not os.path.exists(os.path.join(log_dir, candidate)):
+            return candidate
+        i += 1
 
 
 def safe_append_row(path, row_dict):

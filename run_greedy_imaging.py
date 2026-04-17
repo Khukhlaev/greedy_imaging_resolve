@@ -1,13 +1,17 @@
 import os 
 
-import subprocess, concurrent.futures, pathlib
+import subprocess, concurrent.futures
 import configparser
 import argparse
 
-from utils.utilities import get_ms_data_path, get_source_date_type
+from pathlib import Path
+
+from utils.utilities import get_source_date_type, get_observation
 from utils.image_helper import create_movie
 
 import numpy as np
+
+import sys
 
 
 # Setting up argument parser to accept configuration file path
@@ -40,20 +44,55 @@ template_cfg.read(TEMPLATE_CONF)
 
 n_map_runs = provided_arguments['n_map_runs'] if 'n_map_runs' in provided_arguments else cfg['optimization'].getint('n_map_runs')
 n_vi_standalone_runs = provided_arguments['n_vi_standalone_runs'] if 'n_vi_standalone_runs' in provided_arguments else cfg['optimization'].getint('n_vi_standalone_runs')
-
 random_seeds = np.random.randint(0, 10000, size=n_map_runs+n_vi_standalone_runs)
-
 
 data_store_dir = "./ms_data"
 os.makedirs(data_store_dir, exist_ok=True)
+
 data_file = provided_arguments.get('data_file', 'None') if 'data_file' in provided_arguments else cfg['observation'].get('data_file', 'None').strip()
 
-if data_file.lower() != 'none':
-    source, date, visibility_type, _ = get_source_date_type(data_file)
-    get_ms_data_path(data_store_dir, uvf_file=data_file)
+if data_file.lower() == 'none':
+    source, date, visibility_type = cfg['observation']['source_name'].strip(), cfg['observation']['date'].strip(), cfg['observation']['visibility_type'].strip()
+    gz_flag = "" if visibility_type == "uvf" else ".gz"
+    data_file = f"/aux/zeall/2cmVLBA/data/{source}/{date}/{source}.u.{date}.{visibility_type}{gz_flag}"
 else:
-    source, date, visibility_type, _ = cfg['observation']['source_name'].strip(), cfg['observation']['date'].strip(), cfg['observation']['visibility_type'].strip(), False
-    get_ms_data_path(data_store_dir, source=source, date=date, visibility_type=visibility_type)
+    source, date, visibility_type, _ = get_source_date_type(data_file)
+
+
+# Transforming data to ms format
+proc = subprocess.run(["python","transform_data.py","--data_file",str(data_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+ms_data_path = f"./ms_data/{source}/{source}.u.{date}.{visibility_type}.ms"
+if os.path.exists(ms_data_path):
+    print("Sucessfully transformed data to ms format. Starting the imaging.")
+else:
+    print("Error transforming the data to ms format. Check casa log file.")
+    sys.exit()
+    
+# Removing casa log files
+for path in Path(".").glob("casa-*.log"):
+    path.unlink(missing_ok=True)
+
+# Hardcode the polarization: "stokesi", as we want to have Stokes I images. This works for modern epochs, but sometimes fail for old ones. In that case, we will use polarizations="all"
+polarizations = "stokesi"
+try:
+    get_observation("./ms_data", source, date, visibility_type, polarizations)
+
+except Exception as e:
+    print(f"Cannot load polarizations=\"stokesi\". Attempting to use polarizations=\"all\". Error: {e}")
+    polarizations = "all"
+    try:
+        get_observation("./ms_data", source, date, visibility_type, polarizations)
+
+    except Exception as e:
+        print(f"Cannot load polarizations=\"all\". Cannot image the provided data. Error: {e}")
+
+        sys.exit()
+
+# Adding arguments to the dictionary that will be used to replace the placeholders in the template config
+provided_arguments['source_name'] = source
+provided_arguments['date'] = date
+provided_arguments['visibility_type'] = visibility_type
 
 os.makedirs("./tmp_configs", exist_ok=True)
 
@@ -61,7 +100,7 @@ os.makedirs("./tmp_configs", exist_ok=True)
 def submit_run(idx):
     map_flag = True if idx < n_map_runs else False
 
-    tmp_conf = pathlib.Path(f"./tmp_configs/conf_{idx}_{source}_{date}.cfg")
+    tmp_conf = Path(f"./tmp_configs/conf_{idx}_{source}_{date}.cfg")
 
     content = open(TEMPLATE_CONF).read()
 
@@ -73,10 +112,11 @@ def submit_run(idx):
 
     content = content.replace("__SEED__", str(random_seeds[idx]))
     content = content.replace("__MAP__", str(map_flag))
+    content = content.replace("__POLARIZATIONS__", polarizations)
 
     tmp_conf.write_text(content)
 
-    proc = subprocess.run(["python","imaging.py","--config",str(tmp_conf)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.run(["python","imaging.py","--config",str(tmp_conf)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     tmp_conf.unlink(missing_ok=True)
     return proc.returncode
 
