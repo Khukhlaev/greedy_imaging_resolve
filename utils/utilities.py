@@ -145,21 +145,22 @@ def weighted_average_visibilities(obs_list, decimals=8):
         ant2_new[j] = acc["ant2"]
 
 
+    sorted_time_indices = np.argsort(time_new)
     averaged_obs = obs_list[0]
-    averaged_obs._weight = wgt_new
-    averaged_obs._vis = vis_avg
-    averaged_obs._antpos = rve.AntennaPositions(uvw_new, ant1_new, ant2_new, time_new)
+    averaged_obs._weight = wgt_new[:, sorted_time_indices, :]
+    averaged_obs._vis = vis_avg[:, sorted_time_indices, :]
+    averaged_obs._antpos = rve.AntennaPositions(uvw_new[sorted_time_indices, :], ant1_new[sorted_time_indices], ant2_new[sorted_time_indices], time_new[sorted_time_indices])
 
     return averaged_obs
 
 
-def get_observation(store_dir, source, date, visibility_type, polarizations="stokesi"):
+def get_observation(store_dir, source, filename, polarizations="stokesi"):
     """
     Get observation, correctly averaging spectral windows. 
     The function assumes that you have already transformed the original data to the ms format.
     """
 
-    ms_path = os.path.join(store_dir, source, f"{source}.u.{date}.{visibility_type}.ms")
+    ms_path = os.path.join(store_dir, source, f"{filename}.ms")
 
     if not os.path.exists(ms_path):
         raise FileNotFoundError(f"ms data file does not exist: {ms_path}")

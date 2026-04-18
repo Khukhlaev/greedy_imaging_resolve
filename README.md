@@ -17,7 +17,7 @@ To install all required packages, run
 
 ## Run
 
-To start, specify the desired parameters in `main_conf.cfg`, and run 
+To start, specify desired parameters in `main_conf.cfg`, and run 
 
 
 ```bash
@@ -29,7 +29,7 @@ Modify `imaging_conf.cfg` only if you want to change the correlation model for i
 Some important parameters can alternatively be set through the command line interface:
 
 ```bash
-python run_greedy_imaging.py --data_file=/path/to/uvf_file.uvf_raw_edt --n_threads=8 --pixscale=0.05 --npix=512 --n_map_runs=5 --n_vi_standalone_runs=3
+python run_greedy_imaging.py --data_file=/path/to/uvf_file.uvf_raw_edt --dir_name=2012_15GHz --n_threads=8 --pixscale=0.05 --npix=512 --n_map_runs=5 --n_vi_standalone_runs=3
 ```
 
 Options (also accesible via `python run_greedy_imaging.py --help`)
@@ -37,8 +37,9 @@ Options (also accesible via `python run_greedy_imaging.py --help`)
 
 - `--config`: path to the main configuration file. Default: `./main_cong.cfg`
 - `--data_file`: path to the uvf data file. If not provided, the script will attempt to use source and date in the config to load corresponding MOJAVE data
+- `--dir_name`: name of the sub-directory where the reults of the run will be stored. Path for images is `{root_dir}/images/{source_name}/dir_name`. Path for the output files is `{root_dir}/output_files/{source_name}/{dir_name}`. If not provided, name of the data file will be used 
 - `--n_threads`: number of concurrent runs / cpu threads to use
-- `--n_map_runs`: number of VI runs to be conducted with MAP estimations as a starting point
+- `--n_map_runs`: number of VI runs to be conducted with MAP estimation as a starting point
 - `--n_vi_standalone_runs`: number of VI runs to be conducted 'standalone', i.e. starting from a random point in the Gaussian prior
 - `--pixscale`: pixelscale to be used for all runs, in mas/pixel
 - `--npix`: number of pixels to be used (in both x and y directions)
@@ -48,20 +49,20 @@ If some of these parameters are not set with the command line interface, their v
 Two options for providing the data are possible:
 
 1. Specify the `data_file` field in the main config or via the command line interface with the path to the uvf or uvf_raw_edt data file 
-2. Comment `data_file` field out (or set to None) and specify source name and date in the config. In that case, the script will attempt to load the corresponding MOJAVE observations (assuming you have access to the VLBI group data storage system)
+2. Comment `data_file` field out (or set to None) and specify source name and date in the config. In that case, the script will attempt to load the corresponding MOJAVE observation (assuming you have access to the VLBI group data storage system)
 
 Please note that if no number of pixels is provided (are equal to 0 in the config), the script will attempt to use the number of pixels from the corresponding MOJAVE observation, and fail if it does not exist.
 
-Also note that the script will perform weighted averaging on all IF channels in the data. 
+Also note that the script will perform weighted averaging on all IF channels in the data.
 
-Support for the `uvf_raw` data is currently not available. 
+Support for the `uvf_raw` data is currently not available, since it often requires coherent averaging beforehand. It will likely be added in the future. 
 
 ## Analysis
 
-The run files, useful for the subsequent analysis, are saved at `{root_output_directory}/output_files/{source_name}/{date}/seed_{seed}`.
+The run files, useful for the subsequent analysis, are saved at `{root_output_directory}/output_files/{source_name}/{dir_name}/seed_{seed}`.
 
-The final images are saved at `{root_output_directory}/images/{source_name}/{date}`.
+The final images and movies are saved at `{root_output_directory}/images/{source_name}/{dir_name}`.
 
 The logs are saved at `{root_output_directory}/logs`.
 
-By default, `root_output_directory=./results`
+By default, `root_output_directory=./results` and `dir_name` is set to the name of the data file.

@@ -1,3 +1,15 @@
+# transformed data files
+ms_data/
+
+# resolve package dir
+resolve/
+
+# results of the runs
+results/
+
+# directory for temporary config files
+tmp_configs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

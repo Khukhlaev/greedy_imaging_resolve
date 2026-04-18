@@ -3,13 +3,22 @@ import resolve as rve
 import matplotlib.pyplot as plt
 import h5py
 import os
+from pathlib import Path
 
 from astropy.io import fits
-from matplotlib.gridspec import GridSpec
-import imageio, re
+import imageio
 
 import pandas as pd
 
+
+def get_correct_file(base_path):
+    """Get the correct file to load based on the saving strategy. If last.hdf5 exists, return it. Otherwise, return the iteration with the highest number."""
+    last_file = Path(base_path) / "last.hdf5"
+    if last_file.exists():
+        return last_file
+    
+    iter_files = sorted(Path(base_path).glob("iteration_*.hdf5"))
+    return iter_files[-1]   # highest iteration if names sort correctly
 
 
 
@@ -35,13 +44,13 @@ def noise_level_estimation(image):
 ######## GAINS #################
 
 
-def create_gain_plots(root_dir, obs, source, date, seed):
-    """Parent function to create and save all gain plots for particular source and date"""
+def create_gain_plots(root_dir, obs, source, dir_name, seed):
+    """Parent function to create and save gain plot for specific estimation"""
     uantennas = rve.unique_antennas(obs)
     station_table = obs._auxiliary_tables['ANTENNA']['STATION']
 
-    overall_title = f"Gain plots - {source}, {date}, seed={seed}"
-    saving_path = os.path.join(root_dir, "images", source, date, "gain_plots")
+    overall_title = f"Gain plots - {source}, {dir_name}, seed={seed}"
+    saving_path = os.path.join(root_dir, "images", source, dir_name, "gain_plots")
 
     os.makedirs(saving_path, exist_ok=True)
 
@@ -52,15 +61,24 @@ def create_gain_plots(root_dir, obs, source, date, seed):
     starts = np.r_[0, breaks + 1]
     ends   = np.r_[breaks, len(time) - 1]
 
-    fig, axs = plt.subplots(2, 2, figsize=(16, 10))
+    single_gain = obs.vis.val.shape[0] == 1
+
+    if single_gain:
+        fig, axs = plt.subplots(2, 1, figsize=(8, 10))
+    else:
+        fig, axs = plt.subplots(2, 2, figsize=(16, 10))
     axs = axs.flatten()
 
-    for i in range(4):
+    for ax in axs:
         for s, e in zip(starts, ends):
-            axs[i].axvspan(time[s] / 3600, time[e] / 3600, color='0.85', alpha=0.7, zorder=0)
+            ax.axvspan(time[s] / 3600, time[e] / 3600, color='0.85', alpha=0.7, zorder=0)
+
+    # Accomodating for both saving strategies (last and all)
+    base_path = os.path.join(root_dir, "output_files", source, dir_name, f"seed_{seed}", "gain_logamp")
+    gain_filename = get_correct_file(base_path)
 
     # Amplitude gain plotter
-    with h5py.File(os.path.join(root_dir, "output_files", source, date, f"seed_{seed}", "gain_logamp", "iteration_19.hdf5"), "r") as hdf:
+    with h5py.File(gain_filename, "r") as hdf:
 
         amp_samples_list = []
 
@@ -89,29 +107,33 @@ def create_gain_plots(root_dir, obs, source, date, seed):
                                                                                     :len(time_domain) // 2, 0],
                                 alpha=0.5)
             
-        axs[0].set_title(f'Amplitude gain LCP')
+        title = "Amplitude gain" if single_gain else "Amplitude gain LCP"   
+        axs[0].set_title(title)
         axs[0].set_xlabel('Relative time, hours')
         axs[0].set_ylabel('Amplitude gain')
         axs[0].legend()
 
         ### Amplitude gain RCP Plotter
-
-        for ii in np.arange(int(len(uantennas))):
-            axs[1].plot(time_domain_hours_half, amp_samples_mean[1, ii, :len(time_domain) // 2, 0],
-                        label=f'{station_table[list(uantennas)[ii]]}', linewidth=1.0)
-            axs[1].fill_between(time_domain_hours_half,
-                                amp_samples_mean[1, ii, :len(time_domain) // 2, 0] - amp_samples_std[1, ii,
-                                                                                    :len(time_domain) // 2, 0],
-                                amp_samples_mean[1, ii, :len(time_domain) // 2, 0] + amp_samples_std[1, ii,
-                                                                                    :len(time_domain) // 2, 0],
-                                alpha=0.5)
-        axs[1].set_title(f'Amplitude gain RCP')
-        axs[1].set_xlabel('Relative time, hours')
-        axs[1].set_ylabel('Amplitude gain')
-        axs[1].legend()
+        if not single_gain:
+            for ii in np.arange(int(len(uantennas))):
+                axs[1].plot(time_domain_hours_half, amp_samples_mean[1, ii, :len(time_domain) // 2, 0],
+                            label=f'{station_table[list(uantennas)[ii]]}', linewidth=1.0)
+                axs[1].fill_between(time_domain_hours_half,
+                                    amp_samples_mean[1, ii, :len(time_domain) // 2, 0] - amp_samples_std[1, ii,
+                                                                                        :len(time_domain) // 2, 0],
+                                    amp_samples_mean[1, ii, :len(time_domain) // 2, 0] + amp_samples_std[1, ii,
+                                                                                        :len(time_domain) // 2, 0],
+                                    alpha=0.5)
+            axs[1].set_title(f'Amplitude gain RCP')
+            axs[1].set_xlabel('Relative time, hours')
+            axs[1].set_ylabel('Amplitude gain')
+            axs[1].legend()
 
     ### Phase gain plotter
-    with h5py.File(os.path.join(root_dir, "output_files", source, date, f"seed_{seed}", "gain_phase", "iteration_19.hdf5"), "r") as hdf:
+    base_path = os.path.join(root_dir, "output_files", source, dir_name, f"seed_{seed}", "gain_phase")
+    phase_filename = get_correct_file(base_path)
+
+    with h5py.File(phase_filename, "r") as hdf:
 
         phase_samples_list = []
 
@@ -132,36 +154,41 @@ def create_gain_plots(root_dir, obs, source, date, seed):
 
         time_domain_hours_half = time_domain_hours[:len(time_domain_hours) // 2]
 
+        ax_ind = 1 if single_gain else 2
+
+
         for ii in np.arange(int(len(uantennas))):
-            axs[2].plot(time_domain_hours_half, phase_samples_mean_deg[0, ii, :len(time_domain) // 2, 0],
+            axs[ax_ind].plot(time_domain_hours_half, phase_samples_mean_deg[0, ii, :len(time_domain) // 2, 0],
                         label=f'{station_table[list(uantennas)[ii]]}', linewidth=1.0)
-            axs[2].fill_between(time_domain_hours_half,
+            axs[ax_ind].fill_between(time_domain_hours_half,
                                 phase_samples_mean_deg[0, ii, :len(time_domain) // 2, 0] - phase_samples_std_deg[0, ii,
                                                                                         :len(time_domain) // 2, 0],
                                 phase_samples_mean_deg[0, ii, :len(time_domain) // 2, 0] + phase_samples_std_deg[0, ii,
                                                                                         :len(time_domain) // 2, 0],
                                 alpha=0.5)
-        axs[2].set_title(f'Phase gain LCP')
-        axs[2].set_xlabel('Relative time, hours')
-        axs[2].set_ylabel('Phase gain, deg')
-        axs[2].legend()
+        title = "Phase gain" if single_gain else "Phase gain LCP"
+        axs[ax_ind].set_title(title)
+        axs[ax_ind].set_xlabel('Relative time, hours')
+        axs[ax_ind].set_ylabel('Phase gain, deg')
+        axs[ax_ind].legend()
 
-        for ii in np.arange(int(len(uantennas))):
-            axs[3].plot(time_domain_hours_half, phase_samples_mean_deg[1, ii, :len(time_domain) // 2, 0],
-                        label=f'{station_table[list(uantennas)[ii]]}', linewidth=1.0)
-            axs[3].fill_between(time_domain_hours_half,
-                                phase_samples_mean_deg[1, ii, :len(time_domain) // 2, 0] - phase_samples_std_deg[1, ii,
-                                                                                        :len(time_domain) // 2, 0],
-                                phase_samples_mean_deg[1, ii, :len(time_domain) // 2, 0] + phase_samples_std_deg[1, ii,
-                                                                                        :len(time_domain) // 2, 0],
-                                alpha=0.5)
-        axs[3].set_title(f'Phase gain RCP')
-        axs[3].set_xlabel('Relative time, hours')
-        axs[3].set_ylabel('Phase gain, deg')
-        axs[3].legend()
+        if not single_gain:
+            for ii in np.arange(int(len(uantennas))):
+                axs[3].plot(time_domain_hours_half, phase_samples_mean_deg[1, ii, :len(time_domain) // 2, 0],
+                            label=f'{station_table[list(uantennas)[ii]]}', linewidth=1.0)
+                axs[3].fill_between(time_domain_hours_half,
+                                    phase_samples_mean_deg[1, ii, :len(time_domain) // 2, 0] - phase_samples_std_deg[1, ii,
+                                                                                            :len(time_domain) // 2, 0],
+                                    phase_samples_mean_deg[1, ii, :len(time_domain) // 2, 0] + phase_samples_std_deg[1, ii,
+                                                                                            :len(time_domain) // 2, 0],
+                                    alpha=0.5)
+            axs[3].set_title(f'Phase gain RCP')
+            axs[3].set_xlabel('Relative time, hours')
+            axs[3].set_ylabel('Phase gain, deg')
+            axs[3].legend()
 
     plt.suptitle(overall_title, fontsize=16)
-    plt.savefig(os.path.join(saving_path, f"{source}_{date}_seed_{seed}_gains.png"), dpi=600)
+    plt.savefig(os.path.join(saving_path, f"{source}_{dir_name}_seed_{seed}_gains.png"), dpi=600)
     
 
 ########## MOVIES ##############
@@ -217,36 +244,36 @@ def load_vi_image_from_hdf5(hdf5_file):
         return None
 
 
-def create_movie_frames(root_dir, source_name, date, pixscale=0.05, contours=False, n_contours=5):
+def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours=False, n_contours=5):
     """
     Create movie frames with 1 plot per seed.
     
     :param root_dir: root directory of the run
     :param source_name: name of the source
-    :param date: date of the observation
+    :param dir_name: name of the directory with the results
     :param pixscale: pixel scale in mas/pixel
     :param contours: whether to plot contours. Default is False
     :param n_contours: number of contours to plot
     """
-    base_path = os.path.join(root_dir, "output_files", source_name, date)
+    base_path = os.path.join(root_dir, "output_files", source_name, dir_name)
     seeds = os.listdir(base_path)
     seeds.remove("initial_MAP")
     seeds.sort()
 
-    csv_path = os.path.join(root_dir, "logs", "csv_files", f"{source_name}_{date}.csv")
+    csv_path = os.path.join(root_dir, "logs", "csv_files", f"{dir_name}.csv")
     info_df = pd.read_csv(csv_path)
     info_df = info_df.set_index("seed")
 
-    save_dir = os.path.join(root_dir, "images", source_name, date, "movie_frames")
+    save_dir = os.path.join(root_dir, "images", source_name, dir_name, "movie_frames")
     os.makedirs(save_dir, exist_ok=True)
 
     nx, ny = 0, 0 # Initialize image dimensions
     frame_index = 0
 
     for seed in seeds:
-        seed_path = os.path.join(base_path, seed)
+        seed_path = os.path.join(base_path, seed, "sky")
 
-        vi_hdf5 = os.path.join(seed_path, "sky", "iteration_19.hdf5")
+        vi_hdf5 = get_correct_file(seed_path)
         vi_image = load_vi_image_from_hdf5(vi_hdf5)
         if vi_image is None:
             continue
@@ -282,7 +309,7 @@ def create_movie_frames(root_dir, source_name, date, pixscale=0.05, contours=Fal
         plt.xlabel("Relative RA (mas)")
         plt.ylabel("Relative Dec (mas)")
 
-        plt.suptitle(f"{source_name}, {date}", fontsize=16, weight='bold')
+        plt.suptitle(f"{source_name}, {dir_name}", fontsize=16, weight='bold')
 
         # Save frame
         frame_path = os.path.join(save_dir, f"frame_{frame_index:03d}.png")
@@ -293,11 +320,11 @@ def create_movie_frames(root_dir, source_name, date, pixscale=0.05, contours=Fal
     return save_dir
 
 
-def create_movie(root_dir, source, date, fps=1):
+def create_movie(root_dir, source, dir_name, fps=1):
     """Parent function to create movie of the source"""
-    frames_dir = create_movie_frames(root_dir, source, date)
+    frames_dir = create_movie_frames(root_dir, source, dir_name)
     files = sorted(os.listdir(frames_dir))
-    out_path = os.path.join(root_dir, "images", source, date, f"movie_{source}_{date}.mp4")
+    out_path = os.path.join(root_dir, "images", source, dir_name, f"movie_{source}_{dir_name}.mp4")
 
     with imageio.get_writer(out_path, fps=fps, codec='libx264', ffmpeg_params=['-pix_fmt', 'yuv420p']) as writer:
         for fn in files:

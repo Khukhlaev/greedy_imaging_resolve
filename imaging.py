@@ -37,17 +37,17 @@ args = parser.parse_args()
 cfg = configparser.ConfigParser()
 cfg.read(args.config)
 
-cfg_observation = cfg["observation"]
-data_file = cfg_observation.get("data_file", "None").strip()
-
 root_save_directory = cfg["base"]["root_output_directory"]
+dir_name = cfg["base"].get("dir_name").strip()
+
 os.makedirs(root_save_directory, exist_ok=True)
 os.makedirs(os.path.join(root_save_directory, "logs"), exist_ok=True)
 os.makedirs(os.path.join(root_save_directory, "logs", "csv_files"), exist_ok=True)
 
 central_error_log = os.path.join(root_save_directory, "logs", "errors.log")
 
-
+cfg_observation = cfg["observation"]
+filename = cfg_observation["filename"].strip()
 source_name = cfg_observation["source_name"].strip()
 date = cfg_observation["date"].strip()
 visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
@@ -63,12 +63,12 @@ map_flag = cfg["optimization"]["map"] == "True"
 map_message = "on top of MAP" if map_flag else "standalone" 
 
 pixscale = cfg["sky"].getfloat("pixscale", 0.05)  # in mas/pixel
-n_pix_x, n_pix_y = cfg["sky"].getint("n_pixels_x"), cfg["sky"].getint("n_pixels_y")
+n_pix_x, n_pix_y = cfg["sky"].getint("n_pixels_x", 0), cfg["sky"].getint("n_pixels_y", 0)
 
 save_strategy = cfg["base"].get("save_strategy", "last")
 
-central_csv_log = os.path.join(root_save_directory, "logs", "csv_files", f"{source_name}_{date}.csv")
-log_file = os.path.join(root_save_directory, "logs", f"{source_name}_{date}.log")
+central_csv_log = os.path.join(root_save_directory, "logs", "csv_files", f"{source_name}_{dir_name}.csv")
+log_file = os.path.join(root_save_directory, "logs", f"{source_name}_{dir_name}.log")
 
 starting_time = datetime.datetime.now()
 
@@ -82,7 +82,7 @@ fov = (imsize[0] * pixscale, imsize[1] * pixscale)  # in mas
 
 
 ### 1. loading data
-obs = get_observation("./ms_data", source_name, date, visibility_type, polarizations)
+obs = get_observation("./ms_data", source_name, filename, polarizations)
         
 tmin, tmax = rve.tmin_tmax(obs)
 obs = obs.move_time(-tmin)
@@ -175,12 +175,12 @@ if map_flag:
             plt.xlabel("Relative RA (mas)", fontsize=11)
             plt.ylabel("Relative Dec (mas)", fontsize=11)
             plt.gca().invert_xaxis()
-            save_dir = os.path.join(root_save_directory, "images", source_name, date, "initial_MAP")
+            save_dir = os.path.join(root_save_directory, "images", source_name, dir_name, "initial_MAP")
             os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(os.path.join(save_dir, f"{source_name}_{date}_MAP_{seed}.png"), bbox_inches="tight", dpi=600)
+            plt.savefig(os.path.join(save_dir, f"{source_name}_{dir_name}_MAP_{seed}.png"), bbox_inches="tight", dpi=600)
             plt.close()
 
-    output_directory = os.path.join(root_save_directory, "output_files", source_name, date, "initial_MAP", f"seed_{seed}")
+    output_directory = os.path.join(root_save_directory, "output_files", source_name, dir_name, "initial_MAP", f"seed_{seed}")
     os.makedirs(output_directory, exist_ok=True)
 
 
@@ -224,14 +224,14 @@ def inspect_callback_vi(sl, iglobal):
         plt.xlabel("Relative RA (mas)", fontsize=11)
         plt.ylabel("Relative Dec (mas)", fontsize=11)
         plt.gca().invert_xaxis()
-        save_dir = os.path.join(root_save_directory, "images", source_name, date)
+        save_dir = os.path.join(root_save_directory, "images", source_name, dir_name)
         
         os.makedirs(save_dir, exist_ok=True)
 
-        plt.savefig(os.path.join(save_dir, f"{source_name}_{date}_VI_{seed}.png"), bbox_inches="tight", dpi=600)
+        plt.savefig(os.path.join(save_dir, f"{source_name}_{dir_name}_VI_{seed}.png"), bbox_inches="tight", dpi=600)
         plt.close()
 
-output_directory = os.path.join(root_save_directory, "output_files", source_name, date, f"seed_{seed}")
+output_directory = os.path.join(root_save_directory, "output_files", source_name, dir_name, f"seed_{seed}")
 os.makedirs(output_directory, exist_ok=True)
 
 try:
@@ -271,10 +271,10 @@ if not map_flag:
 row_dict = {"seed": seed, "MAP": map_flag, "MAP_likelihood": final_map_likelihood, "VI_likelihood": average_likelihood, "time_hours": timedelta.total_seconds() / 3600}
 safe_append_row(central_csv_log, row_dict)
 
-create_gain_plots(root_save_directory, obs, source_name, date, seed)
+create_gain_plots(root_save_directory, obs, source_name, dir_name, seed)
 
 # Saving final samples
-pickle_file = os.path.join(root_save_directory, "output_files", source_name, date, f"seed_{seed}", "pickle", "final_samples.pickle")
+pickle_file = os.path.join(root_save_directory, "output_files", source_name, dir_name, f"seed_{seed}", "pickle", "final_samples.pickle")
 with open(pickle_file, "wb") as f:
     pickle.dump(vi_samples_multifield, f, protocol=pickle.HIGHEST_PROTOCOL)
 
