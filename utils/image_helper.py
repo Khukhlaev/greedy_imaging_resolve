@@ -260,7 +260,7 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
     seeds.remove("initial_MAP")
     seeds.sort()
 
-    csv_path = os.path.join(root_dir, "logs", "csv_files", f"{dir_name}.csv")
+    csv_path = os.path.join(root_dir, "logs", "csv_files", f"{source_name}_{dir_name}.csv")
     info_df = pd.read_csv(csv_path)
     info_df = info_df.set_index("seed")
 
