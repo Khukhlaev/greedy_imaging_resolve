@@ -189,6 +189,7 @@ def create_gain_plots(root_dir, obs, source, dir_name, seed):
 
     plt.suptitle(overall_title, fontsize=16)
     plt.savefig(os.path.join(saving_path, f"{source}_{dir_name}_seed_{seed}_gains.png"), dpi=600)
+    plt.close(fig)
     
 
 ########## MOVIES ##############
