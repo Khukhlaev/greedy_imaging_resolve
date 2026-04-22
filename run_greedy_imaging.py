@@ -118,7 +118,7 @@ os.makedirs("./tmp_configs", exist_ok=True)
 print(f"\nStarting imaging at {datetime.datetime.now()}. Total runs to conduct: {n_map_runs + n_vi_standalone_runs}. Using up to {MAX_CONC} concurrent runs.")
 
 # Estimating runtime based on the number of pixels and number of runs, assuming 4 hours for 512x512
-n_pix = provided_arguments.get('n_pix', cfg['sky'].getint('n_pixels_x', 0))
+n_pix = provided_arguments.get('npix', cfg['sky'].getint('n_pixels_x', 0))
 if n_pix == 0:
     n_pix = n_pix_clean
 

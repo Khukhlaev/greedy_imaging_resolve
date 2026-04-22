@@ -10,5 +10,5 @@ if [ ! -d "$REPO_DIR" ]; then
   git clone --recursive "$REPO_URL" "$REPO_DIR"
 fi
 
-python -m pip install matplotlib pandas casatasks
+python -m pip install matplotlib pandas python-casacore casatasks astropy h5py imageio
 python -m pip install "./$REPO_DIR"
