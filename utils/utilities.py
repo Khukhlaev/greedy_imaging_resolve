@@ -10,7 +10,7 @@ import pandas as pd
 
 from astropy.io import fits
 
-from .image_helper import load_vi_image_from_hdf5, get_correct_file
+from .image_helper import load_vi_image_from_hdf5, get_correct_filepath
 
 def mas_to_rad(mas: float) -> float:
     """Convert milliarcseconds to radians."""
@@ -297,9 +297,8 @@ def save_image_as_fits(root_dir, source_name, date, dir_name, seed, pixscale):
     fits_path = os.path.join(root_dir, "output_files", source_name, dir_name, "fits_images", f"{source_name}_{dir_name}_seed_{seed}.fits")
     os.makedirs(fits_path, exist_ok=True)
     hdf_path = os.path.join(root_dir, "output_files", source_name, dir_name, f"seed_{seed}", "sky")
-    image_path = get_correct_file(hdf_path)
+    image_path = get_correct_filepath(hdf_path)
 
-    print(image_path)
     image = load_vi_image_from_hdf5(image_path)
     image = image.T # Transpose to match (ny, nx) convention
     ny, nx = image.shape

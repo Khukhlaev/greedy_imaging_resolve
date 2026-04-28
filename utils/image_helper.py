@@ -6,20 +6,29 @@ import os
 from pathlib import Path
 
 from astropy.io import fits
-import imageio
+import imageio, re
 
 import pandas as pd
 
 
-def get_correct_file(base_path):
-    """Get the correct file path to load based on the saving strategy. If last.hdf5 exists, return it. Otherwise, return the iteration with the highest number."""
-    last_file = Path(base_path) / "last.hdf5"
+def get_correct_filepath(base_path):
+    """Get the correct file to load based on the saving strategy. If last.hdf5 exists, return it. Otherwise, return the iteration with the highest number."""
+    base_path = Path(base_path)
+    
+    last_file = base_path / "last.hdf5"
     if last_file.exists():
         return last_file
     
-    iter_files = sorted(Path(base_path).glob("iteration_*.hdf5"))
-    return iter_files[-1]   # highest iteration if names sort correctly
+    iter_files = list(base_path.glob("iteration_*.hdf5"))
 
+    if not iter_files:
+        raise FileNotFoundError(f"No iteration files found in {base_path}")
+
+    def iteration_num(path):
+        m = re.search(r"iteration_(\d+)\.hdf5$", path.name)
+        return int(m.group(1)) if m else -1
+
+    return max(iter_files, key=iteration_num)
 
 
 def border_mask(shape):
@@ -75,7 +84,7 @@ def create_gain_plots(root_dir, obs, source, dir_name, seed):
 
     # Accomodating for both saving strategies (last and all)
     base_path = os.path.join(root_dir, "output_files", source, dir_name, f"seed_{seed}", "gain_logamp")
-    gain_filename = get_correct_file(base_path)
+    gain_filename = get_correct_filepath(base_path)
 
     # Amplitude gain plotter
     with h5py.File(gain_filename, "r") as hdf:
@@ -131,7 +140,7 @@ def create_gain_plots(root_dir, obs, source, dir_name, seed):
 
     ### Phase gain plotter
     base_path = os.path.join(root_dir, "output_files", source, dir_name, f"seed_{seed}", "gain_phase")
-    phase_filename = get_correct_file(base_path)
+    phase_filename = get_correct_filepath(base_path)
 
     with h5py.File(phase_filename, "r") as hdf:
 
@@ -275,7 +284,7 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
     for seed in seeds:
         seed_path = os.path.join(base_path, seed, "sky")
 
-        vi_hdf5 = get_correct_file(seed_path)
+        vi_hdf5 = get_correct_filepath(seed_path)
         vi_image = load_vi_image_from_hdf5(vi_hdf5)
         if vi_image is None:
             continue
