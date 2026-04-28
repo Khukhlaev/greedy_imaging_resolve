@@ -12,7 +12,7 @@ import pandas as pd
 
 
 def get_correct_file(base_path):
-    """Get the correct file to load based on the saving strategy. If last.hdf5 exists, return it. Otherwise, return the iteration with the highest number."""
+    """Get the correct file path to load based on the saving strategy. If last.hdf5 exists, return it. Otherwise, return the iteration with the highest number."""
     last_file = Path(base_path) / "last.hdf5"
     if last_file.exists():
         return last_file
@@ -257,8 +257,9 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
     :param n_contours: number of contours to plot
     """
     base_path = os.path.join(root_dir, "output_files", source_name, dir_name)
-    seeds = os.listdir(base_path)
+    seeds = [seed_dir for seed_dir in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, seed_dir))]
     seeds.remove("initial_MAP")
+    seeds.remove("fits_images")
     seeds.sort()
 
     csv_path = os.path.join(root_dir, "logs", "csv_files", f"{source_name}_{dir_name}.csv")

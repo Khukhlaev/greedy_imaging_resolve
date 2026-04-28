@@ -10,6 +10,8 @@ import pandas as pd
 
 from astropy.io import fits
 
+from .image_helper import load_vi_image_from_hdf5, get_correct_file
+
 def mas_to_rad(mas: float) -> float:
     """Convert milliarcseconds to radians."""
     return mas * (np.pi / (180.0 * 3600.0 * 1000.0))
@@ -277,3 +279,53 @@ def safe_append_row(path, row_dict):
             os.fsync(f.fileno())
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def save_image_as_fits(root_dir, source_name, date, dir_name, seed, pixscale):
+    """
+    Save the resulting image as a FITS file in the specified directory. 
+
+    :param root_dir: Root directory of the run.
+    :param image_field: nifty.Field object, image field of the observation.
+    :param source_name: Name of the source.
+    :param date: Date of the observation in "YYYY_MM_DD" format.
+    :param dir_name: Name of the directory of the run.
+    :param seed: Seed of the specific run.
+    :param pixscale: Pixel scale in mas/pixel.
+    """
+
+    fits_path = os.path.join(root_dir, "output_files", source_name, dir_name, "fits_images", f"{source_name}_{dir_name}_seed_{seed}.fits")
+    os.makedirs(fits_path, exist_ok=True)
+    hdf_path = os.path.join(root_dir, "output_files", source_name, dir_name, f"seed_{seed}", "sky")
+    image_path = get_correct_file(hdf_path)
+
+    print(image_path)
+    image = load_vi_image_from_hdf5(image_path)
+    image = image.T # Transpose to match (ny, nx) convention
+    ny, nx = image.shape
+
+    pixscale_deg = pixscale / (3600 * 1e3)  # Convert mas/pixel to deg/pixel
+
+    h = fits.Header()
+    h["BUNIT"] = "Jy/mas^2"
+    h["CTYPE1"] = "RA---SIN"
+    h["CRVAL1"] = 0.0
+    h["CDELT1"] = -pixscale_deg
+    h["CRPIX1"] = nx // 2
+    h["CUNIT1"] = "deg"
+    h["CTYPE2"] = "DEC--SIN"
+    h["CRVAL2"] = 0.0
+    h["CDELT2"] = pixscale_deg
+    h["CRPIX2"] = ny // 2
+    h["CUNIT2"] = "deg"
+    h["DATE-OBS"] = date.replace('_', '-')
+    h["OBJECT"] = source_name
+    hdu = fits.PrimaryHDU(image, header=h)
+    hdulist = fits.HDUList([hdu])
+    hdulist.writeto(fits_path, overwrite=True)
+
+
+
+
+
+

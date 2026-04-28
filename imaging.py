@@ -20,7 +20,7 @@ import pickle
 
 import datetime
 
-from utils.utilities import get_zeromode_offset, get_observation, get_clean_params, safe_append_row, append_message
+from utils.utilities import get_zeromode_offset, get_observation, get_clean_params, safe_append_row, append_message, save_image_as_fits
 from utils.sky_model import sky_model_diffuse
 from utils.calibration_operator import get_calibration_operator
 from utils.image_helper import noise_level_estimation, create_gain_plots
@@ -278,3 +278,5 @@ pickle_file = os.path.join(root_save_directory, "output_files", source_name, dir
 with open(pickle_file, "wb") as f:
     pickle.dump(vi_samples_multifield, f, protocol=pickle.HIGHEST_PROTOCOL)
 
+# Saving the final mean image in the fits format
+save_image_as_fits(root_save_directory, source_name, date, dir_name, seed, pixscale)
