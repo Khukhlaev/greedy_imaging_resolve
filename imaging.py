@@ -20,7 +20,7 @@ import pickle
 
 import datetime
 
-from utils.utilities import get_zeromode_offset, get_observation, get_clean_params, safe_append_row, append_message, save_image_as_fits
+from utils.utilities import get_zeromode_offset, get_observation, safe_append_row, append_message, save_image_as_fits
 from utils.sky_model import sky_model_diffuse
 from utils.calibration_operator import get_calibration_operator
 from utils.image_helper import noise_level_estimation, create_gain_plots
@@ -50,7 +50,6 @@ cfg_observation = cfg["observation"]
 filename = cfg_observation["filename"].strip()
 source_name = cfg_observation["source_name"].strip()
 date = cfg_observation["date"].strip()
-visibility_type = cfg_observation.get("visibility_type", "uvf").strip()
 
 sys_error_percentage = cfg_observation.getfloat("sys_error_percentage")
 polarizations = cfg_observation["polarizations"]
@@ -64,6 +63,8 @@ map_message = "on top of MAP" if map_flag else "standalone"
 
 pixscale = cfg["sky"].getfloat("pixscale", 0.05)  # in mas/pixel
 n_pix_x, n_pix_y = cfg["sky"].getint("n_pixels_x", 0), cfg["sky"].getint("n_pixels_y", 0)
+imsize = (n_pix_x, n_pix_y)
+fov = (imsize[0] * pixscale, imsize[1] * pixscale)  # in mas
 
 save_strategy = cfg["base"].get("save_strategy", "last")
 
@@ -71,15 +72,6 @@ central_csv_log = os.path.join(root_save_directory, "logs", "csv_files", f"{sour
 log_file = os.path.join(root_save_directory, "logs", f"{source_name}_{dir_name}.log")
 
 starting_time = datetime.datetime.now()
-
-if n_pix_x == 0 or n_pix_y == 0:
-    clean_params = get_clean_params(source_name, date)
-    imsize = clean_params["imsize"] # Tuple of 2 image size values
-else:
-    imsize = (n_pix_x, n_pix_y)
-
-fov = (imsize[0] * pixscale, imsize[1] * pixscale)  # in mas
-
 
 ### 1. loading data
 obs = get_observation("./ms_data", source_name, filename, polarizations)
