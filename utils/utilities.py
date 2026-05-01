@@ -46,22 +46,18 @@ def get_zeromode_offset(fov, visibility_vals, uvw):
     return zeromode_offset
 
 
-def get_source_date_type(uvf_path: str) -> tuple:
+def get_source_date(uvf_path: str) -> tuple:
     """
     Extract source name and date from the uvf file path.
     
     :param uvf_path: path to the uvf file
     :type uvf_path: str
-    :return: tuple of (source_name, date, visibility_type, gz_suffix)
+    :return: tuple of (source_name, date)
     :rtype: tuple
     """
     header = fits.getheader(uvf_path)
-    extension = os.path.basename(uvf_path).split('.')[-1]
-    base_extension = os.path.basename(uvf_path).split('.')[-2]
-    gz_suffix = ".gz" if extension == "gz" else ""
-    visibility_type = base_extension if gz_suffix else extension
 
-    return header['OBJECT'], header['DATE-OBS'].replace('-', '_'), visibility_type, gz_suffix
+    return header['OBJECT'], header['DATE-OBS'].replace('-', '_')
 
 
 def weighted_average_visibilities(obs_list, decimals=8):
@@ -179,44 +175,15 @@ def get_observation(store_dir, source, filename, polarizations="stokesi"):
             break
     
     if len(observations) == 0:
-        raise RuntimeError("cannot load observation")
+        try:
+            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations="all", ignore_flags=True)[0]
+        except Exception as e:
+            raise RuntimeError(f"Cannot load observation into resolve. Error: {e}")
     
-    if spectral_window < 1:
+    if len(observations) == 1:
         return observations[0]
     
     return weighted_average_visibilities(observations)
-
-
-def get_clean_params(source: str, date: str) -> dict:
-    """
-    Get CLEAN image parameters from the FITS header.
-    
-    :param source: name of the source. Example: "0506+056"
-    :type source: str
-    :param date: date of observation in "YYYY_MM_DD" format. Example: "2025_06_01"
-    :type date: str
-    :return: dictionary with CLEAN image parameters
-    :rtype: dict
-    """
-
-    fits_file = f"/aux/zeall/2cmVLBA/data/{source}/{date}/{source}.u.{date}.icn.fits.gz"
-    header = fits.getheader(fits_file, ext=0)
-    pixel_scale_x = abs(header['CDELT1']) * 3600 * 1e3  # mas/pixel
-    pixel_scale_y = abs(header['CDELT2']) * 3600 * 1e3  # mas/pixel
-
-    fov_x = header['NAXIS1'] * pixel_scale_x  # mas
-    fov_y = header['NAXIS2'] * pixel_scale_y  # mas
-    clean_params = {
-        'source': source,
-        'date': date,
-        'imsize': (int(header['NAXIS1']), int(header['NAXIS2'])),
-        'pixel scale (mas)': (pixel_scale_x, pixel_scale_y),
-        'fov (mas)': (fov_x, fov_y),
-        'bmaj (mas)': header['BMAJ'] * 3600 * 1e3,  
-        'bmin (mas)': header['BMIN'] * 3600 * 1e3,
-        'bpa (deg)': header['BPA']
-    }
-    return clean_params
 
 
 def append_message(text: str, file, other_file = None) -> None:
@@ -294,8 +261,9 @@ def save_image_as_fits(root_dir, source_name, date, dir_name, seed, pixscale):
     :param pixscale: Pixel scale in mas/pixel.
     """
 
-    fits_path = os.path.join(root_dir, "output_files", source_name, dir_name, "fits_images", f"{source_name}_{dir_name}_seed_{seed}.fits")
+    fits_path = os.path.join(root_dir, "output_files", source_name, dir_name, "fits_images")
     os.makedirs(fits_path, exist_ok=True)
+    fits_path = os.path.join(fits_path, f"{source_name}_{dir_name}_seed_{seed}.fits")
     hdf_path = os.path.join(root_dir, "output_files", source_name, dir_name, f"seed_{seed}", "sky")
     image_path = get_correct_filepath(hdf_path)
 

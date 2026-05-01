@@ -36,7 +36,7 @@ Options (also accesible via `python run_greedy_imaging.py --help`)
 
 
 - `--config`: path to the main configuration file. Default: `./main_cong.cfg`
-- `--data_file`: path to the uvf data file. If not provided, the script will attempt to use source and date in the config to load corresponding MOJAVE data
+- `--data_file`: path to the uvf data file. The data should be pre-calibrated and coherently averaged and contain the standard header with the source name and date of othe observation
 - `--dir_name`: name of the sub-directory where the reults of the run will be stored. Path for images is `{root_dir}/images/{source_name}/dir_name`. Path for the output files is `{root_dir}/output_files/{source_name}/{dir_name}`. If not provided, name of the data file will be used 
 - `--n_threads`: number of concurrent runs / cpu threads to use
 - `--n_map_runs`: number of VI runs to be conducted with MAP estimation as a starting point
@@ -44,18 +44,12 @@ Options (also accesible via `python run_greedy_imaging.py --help`)
 - `--pixscale`: pixelscale to be used for all runs, in mas/pixel
 - `--npix`: number of pixels to be used (in both x and y directions)
 
-If some of these parameters are not set with the command line interface, their values will be taken from the main config file. 
+If some of these parameters are not set with the command line interface, their values will be taken from the main config file. You can review and change these default values in `main_conf.cfg`.
 
-Two options for providing the data are possible:
-
-1. Specify the `data_file` field in the main config or via the command line interface with the path to the uvf or uvf_raw_edt data file 
-2. Comment `data_file` field out (or set to None) and specify source name and date in the config. In that case, the script will attempt to load the corresponding MOJAVE observation (assuming you have access to the VLBI group data storage system)
-
-Please note that if no number of pixels is provided (are equal to 0 in the config), the script will attempt to use the number of pixels from the corresponding MOJAVE observation, and fail if it does not exist.
+For adequate results, please make sure that the data is pre-calibrated and coherently averaged beforehand. This can for instance be achieved by using `uvf_raw_edt` or `uvf` formats provided by MOJAVE. Note that the script was extensively tested only for MOJAVE, using other data can lead to unexpected errors. You are welcome to raise these issues and I will try my best to include support for other data. 
 
 Also note that the script will perform weighted averaging on all IF channels in the data.
 
-Support for the `uvf_raw` data is currently not available, since it often requires coherent averaging beforehand. It will likely be added in the future. 
 
 ## Analysis
 
@@ -64,5 +58,7 @@ The run files, useful for the subsequent analysis, are saved at `{root_output_di
 The final images and movies are saved at `{root_output_directory}/images/{source_name}/{dir_name}`.
 
 The logs are saved at `{root_output_directory}/logs`.
+
+Some basic information about the results is saved as a csv file at `{root_output_directory}/logs/csv_files/{source_name}_{dir_name}.csv`
 
 By default, `root_output_directory=./results` and `dir_name` is set to the name of the data file.

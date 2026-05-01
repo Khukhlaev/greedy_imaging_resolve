@@ -6,7 +6,7 @@ import argparse
 
 from pathlib import Path
 
-from utils.utilities import get_source_date_type, get_observation, get_clean_params
+from utils.utilities import get_source_date, get_observation
 from utils.image_helper import create_movie
 
 import numpy as np
@@ -17,7 +17,7 @@ import sys
 # Setting up argument parser to accept configuration file path
 parser = argparse.ArgumentParser(description='Run imaging pipeline for multiple sources and dates. Either specify the parameters in main_conf.cfg or provide them as command line arguments. More detailed settings are availible via the config files.')
 parser.add_argument('--config', type=str, help='path to the main configuration file. Default: ./main_conf.cfg', default="main_conf.cfg")
-parser.add_argument('--data_file', type=str, help='path to the uvf data file. If not provided, the script will attempt to use source and date in the config to load corresponding MOJAVE data', default=argparse.SUPPRESS)
+parser.add_argument('--data_file', type=str, help='path to the uvf data file.', default=argparse.SUPPRESS)
 parser.add_argument('--dir_name', type=str, help='name of the subdirectory where the results are stored. If not provided, the name of the data file will be used', default=argparse.SUPPRESS)
 parser.add_argument('--n_threads', type=int, help='number of concurrent runs / cpu threads to use', default=argparse.SUPPRESS)
 parser.add_argument('--n_map_runs', type=int, help='number of VI runs to be conducted with MAP estimations as a starting point', default=argparse.SUPPRESS)
@@ -52,11 +52,17 @@ data_file = provided_arguments.get('data_file', 'None') if 'data_file' in provid
 dir_name = provided_arguments.get('dir_name', 'None') if 'dir_name' in provided_arguments else cfg['base'].get('dir_name', 'None').strip()
 
 if data_file.lower() == 'none':
-    source, date, visibility_type = cfg['observation']['source_name'].strip(), cfg['observation']['date'].strip(), cfg['observation']['visibility_type'].strip()
-    gz_flag = "" if visibility_type == "uvf" else ".gz"
-    data_file = f"/aux/zeall/2cmVLBA/data/{source}/{date}/{source}.u.{date}.{visibility_type}{gz_flag}"
+    print("No data file provided. Please specify the path to the data file via command line argument or in the main config file.")
+    sys.exit()
 else:
-    source, date, visibility_type, _ = get_source_date_type(data_file)
+    if not os.path.exists(data_file):
+        print(f"Provided data file {data_file} does not exist. Aborting.")
+        sys.exit()
+    try:
+        source, date = get_source_date(data_file)
+    except Exception as e:
+        print(f"Cannot fetch source name and date from the provided file. Aborting. Error: {e}")
+        sys.exit()
 
 
 # Setting up directory to store data. Hardcoded to be "./ms_data/{source}/{filename}.ms", where filename is the name of the data file without the extension. This can be easily changed if needed, but it is not expected that users will provide their own data files, so it should not cause any issues.
@@ -88,29 +94,25 @@ try:
     get_observation("./ms_data", source, filename, polarizations)
 
 except Exception as e:
-    print(f"Cannot load polarizations=\"stokesi\". Attempting to use polarizations=\"all\". Error: {e}")
+    print(f"Cannot load polarizations=\"stokesi\". Seems like only one polarization is available, attempting to load it. Error: {e}")
     polarizations = "all"
     try:
         get_observation("./ms_data", source, filename, polarizations)
 
     except Exception as e:
-        print(f"Cannot load polarizations=\"all\". Cannot image the provided data. Error: {e}")
+        print(f"Cannot load with polarizations=\"all\". Cannot image the provided data. Error: {e}")
 
         sys.exit()
+
+
+if polarizations == "all":
+    print("\nUsing only one polarization (likely due to old epoch).\n")
 
 if (cfg['sky'].getint('n_pixels_x', 0) == 0 or cfg['sky'].getint('n_pixels_y', 0) == 0) and not ('npix' in provided_arguments):
-    print("Number of pixels is not specified. Attempting to use CLEAN values.")
-    try:
-        n_pix_clean = get_clean_params(source, date)["imsize"][0]
-    except Exception as e:
-        print(f"Cannot fetch CLEAN parameters. Please specify the number of pixels via command line argument or in the main config file.")
-        sys.exit()
+    print("Number of pixels is not specified. Please specify the number of pixels via command line argument or in the main config file.")
+    sys.exit()
 
-
-# Adding arguments to the dictionary that will be used to replace the placeholders in the template config
-provided_arguments['source_name'] = source
-provided_arguments['date'] = date
-provided_arguments['visibility_type'] = visibility_type
+# Adding argument to the dictionary that will be used to replace the placeholders in the template config
 provided_arguments['dir_name'] = dir_name
 
 os.makedirs("./tmp_configs", exist_ok=True)
@@ -118,12 +120,9 @@ os.makedirs("./tmp_configs", exist_ok=True)
 print(f"\nStarting imaging at {datetime.datetime.now()}. Total runs to conduct: {n_map_runs + n_vi_standalone_runs}. Using up to {MAX_CONC} concurrent runs.")
 
 # Estimating runtime based on the number of pixels and number of runs, assuming 4 hours for 512x512
-n_pix = provided_arguments.get('npix', cfg['sky'].getint('n_pixels_x', 0))
-if n_pix == 0:
-    n_pix = n_pix_clean
-
+n_pix = provided_arguments['npix'] if 'npix' in provided_arguments else cfg['sky'].getint('n_pixels_x')
 estimated_time_hours = (n_map_runs + n_vi_standalone_runs) * 4 * (n_pix / 512) ** 2 / min(MAX_CONC, n_map_runs + n_vi_standalone_runs)
-print(f"Rough estimated runtime: {estimated_time_hours:.1f} hours, based on the quadratic scaling with the number of pixels. The actual runtime may vary significantly based on the specific data and hardware used.")
+print(f"Rough estimated runtime: {estimated_time_hours:.1f} hours, based on the quadratic scaling with the number of pixels. The actual runtime may vary significantly based on the specific data and hardware used.\n")
 
 
 def submit_run(idx):
@@ -139,6 +138,8 @@ def submit_run(idx):
                 replacement = provided_arguments.get(attribute) if attribute in provided_arguments else cfg[base_key].get(attribute)
                 content = content.replace(template_cfg[base_key][attribute], str(replacement))
 
+    content = content.replace("__SOURCE_NAME__", source)
+    content = content.replace("__DATE__", date)
     content = content.replace("__SEED__", str(random_seeds[idx]))
     content = content.replace("__MAP__", str(map_flag))
     content = content.replace("__POLARIZATIONS__", polarizations)
@@ -163,4 +164,4 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONC) as ex:
 
 create_movie(root_dir=cfg['base']['root_output_directory'], source=source, dir_name=dir_name, fps=0.5)
 
-print(f"Finished all runs at {datetime.datetime.now()}. Total runs conducted: {n_map_runs + n_vi_standalone_runs}.")
+print(f"\nFinished all runs at {datetime.datetime.now()}. Total runs conducted: {n_map_runs + n_vi_standalone_runs}.")
