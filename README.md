@@ -53,12 +53,10 @@ Also note that the script will perform weighted averaging on all IF channels in 
 
 ## Analysis
 
-The run files, useful for the subsequent analysis, are saved at `{root_output_directory}/output_files/{source_name}/{dir_name}/seed_{seed}`, with the final mean images in fits format saved individually for every run at `{root_output_directory}/output_files/{source_name}/{dir_name}/fits_images`
+The run files, useful for the subsequent analysis, are saved at `{root_output_directory}/output_files/{source_name}/{dir_name}/seed_{seed}`, with the final mean images in fits format saved individually for every run at `{root_output_directory}/output_files/{source_name}/{dir_name}/fits_images`. Model parameters (including individual samples) are saved as a pickle file at `{root_output_directory}/output_files/{source_name}/{dir_name}/seed_{seed}/pickle/final_samples.pickle`
 
 The final png images and movies are saved at `{root_output_directory}/images/{source_name}/{dir_name}`.
 
-The logs are saved at `{root_output_directory}/logs`.
-
-Some basic information about the results, as well as likelihood values, are saved as a csv file at `{root_output_directory}/logs/csv_files/{source_name}_{dir_name}.csv`
+The logs are saved at `{root_output_directory}/logs`. Some basic information about the results, as well as likelihood values, are saved as a csv file at `{root_output_directory}/logs/csv_files/{source_name}_{dir_name}.csv`.
 
 By default, `root_output_directory=./results` and `dir_name` is set to the name of the data file.
