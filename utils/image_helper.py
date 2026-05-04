@@ -282,16 +282,22 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
     frame_index = 0
 
     for seed in seeds:
+        seed_num = seed[5:]  # Extract the number part from "seed_{number}"
+        if int(seed_num) not in info_df.index:
+            continue  # Skip if seed number is not in the DataFrame, as this means that the optimization failed for this seed
+
         seed_path = os.path.join(base_path, seed, "sky")
 
-        vi_hdf5 = get_correct_filepath(seed_path)
+        try:
+            vi_hdf5 = get_correct_filepath(seed_path)
+        except FileNotFoundError:
+            continue
+        
         vi_image = load_vi_image_from_hdf5(vi_hdf5)
         if vi_image is None:
             continue
         nx, ny = vi_image.shape
         fovx, fovy = nx * pixscale, ny * pixscale  # in mas
-
-        seed_num = seed[5:]  # Extract the number part from "seed_{number}"
 
         likelihood_val = info_df.loc[int(seed_num), "VI_likelihood"]
         map_flag = info_df.loc[int(seed_num), "MAP"]

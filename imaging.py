@@ -44,7 +44,7 @@ os.makedirs(root_save_directory, exist_ok=True)
 os.makedirs(os.path.join(root_save_directory, "logs"), exist_ok=True)
 os.makedirs(os.path.join(root_save_directory, "logs", "csv_files"), exist_ok=True)
 
-central_error_log = os.path.join(root_save_directory, "logs", "errors.log")
+central_error_log = os.path.join(root_save_directory, "errors.log")
 
 cfg_observation = cfg["observation"]
 filename = cfg_observation["filename"].strip()
@@ -59,7 +59,6 @@ np.random.seed(seed)
 ift.random.push_sseq_from_seed(seed)
 
 map_flag = cfg["optimization"]["map"] == "True"
-map_message = "on top of MAP" if map_flag else "standalone" 
 
 pixscale = cfg["sky"].getfloat("pixscale", 0.05)  # in mas/pixel
 n_pix_x, n_pix_y = cfg["sky"].getint("n_pixels_x", 0), cfg["sky"].getint("n_pixels_y", 0)
@@ -195,12 +194,17 @@ if map_flag:
                                 save_strategy="last",
                                 )
     except Exception as e:
-        append_message(f"{get_current_time_str()}: Error during MAP optimization for source {source_name}, date {date}, seed {seed}. Error: {e}", central_error_log)
+        append_message(f"{get_current_time_str()}: Error during MAP optimization for source {source_name}, dir name {dir_name}, date {date}, seed {seed}. Skipping MAP optimization. Error: {e}", central_error_log)
         sys.exit()
 
     sample_multifield = list(map_sample.iterator())[0]
     final_map_likelihood = likelihood(sample_multifield).val
     map_sample = sample_multifield
+
+
+# Correctly handling the case where MAP was scheduled but failed
+map_message = "on top of MAP" if map_sample is not None else "standalone" 
+map_flag = map_sample is not None
 
 
 def inspect_callback_vi(sl, iglobal):
@@ -246,7 +250,7 @@ try:
                     initial_position=map_sample
                     )
 except Exception as e:
-    append_message(f"{get_current_time_str()}: Error during VI optimization for source {source_name}, date {date}. Error: {e}", central_error_log)
+    append_message(f"{get_current_time_str()}: Error during VI optimization for source {source_name}, dir name {dir_name}, date {date}, seed {seed}. Skipping this seed. Error: {e}", central_error_log)
     sys.exit()
 
 
@@ -256,7 +260,7 @@ average_likelihood = sum([likelihood(vi_sample_multifield).val for vi_sample_mul
 ending_time = datetime.datetime.now()
 timedelta = ending_time - starting_time
 
-append_message(f"{get_current_time_str()}: Finished VI for source {source_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}. Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours", log_file)
+append_message(f"{get_current_time_str()}: Finished VI for source {source_name}, dir name {dir_name}, date {date}, seed {seed}, {map_message}. Final likelihood: {average_likelihood:.2f}. Total time taken: {(timedelta.total_seconds() / 3600):.2f} hours", log_file)
 
 if not map_flag:
     final_map_likelihood = pd.NA
