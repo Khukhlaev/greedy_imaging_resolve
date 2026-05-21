@@ -266,9 +266,7 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
     :param n_contours: number of contours to plot
     """
     base_path = os.path.join(root_dir, "output_files", source_name, dir_name)
-    seeds = [seed_dir for seed_dir in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, seed_dir))]
-    seeds.remove("initial_MAP")
-    seeds.remove("fits_images")
+    seeds = [seed_dir for seed_dir in os.listdir(base_path) if (os.path.isdir(os.path.join(base_path, seed_dir)) and seed_dir.startswith("seed_"))]
     seeds.sort()
 
     csv_path = os.path.join(root_dir, "logs", "csv_files", f"{source_name}_{dir_name}.csv")
@@ -300,6 +298,8 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
         fovx, fovy = nx * pixscale, ny * pixscale  # in mas
 
         likelihood_val = info_df.loc[int(seed_num), "VI_likelihood"]
+        ndof = info_df.loc[int(seed_num), "ndof"]
+        chi2 = likelihood_val * 2 / ndof
         map_flag = info_df.loc[int(seed_num), "MAP"]
 
         map_comment = "on top of MAP" if map_flag else "standalone"
@@ -313,7 +313,7 @@ def create_movie_frames(root_dir, source_name, dir_name, pixscale=0.05, contours
         noise_level = noise_level_estimation(vi_image)
         
         im = plt.pcolormesh(X, Y, np.log10(vi_image).T, vmin=np.log10(noise_level), shading='auto', cmap='inferno')
-        plt.title(f'VI {map_comment}, seed {seed_num}, likelihood={likelihood_val:.0f}', fontsize=14, pad=10, weight='bold')
+        plt.title(f'VI {map_comment}, seed {seed_num}, chi2_red={chi2:.3f}', fontsize=14, pad=10, weight='bold')
         plt.colorbar(im, ax=plt.gca(), label=r"$\log_{10}[I \ (\text{Jy/mas}^2)]$")
         peak = np.nanmax(np.log10(vi_image).T)
         minimum = np.nanmin(np.log10(vi_image).T)

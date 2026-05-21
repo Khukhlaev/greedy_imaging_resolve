@@ -77,6 +77,7 @@ def weighted_average_visibilities(obs_list, decimals=8):
     groups = OrderedDict()
 
 
+    n_obs = len(obs_list)
     for obs in obs_list:
         vis = obs.vis.val
         wgt = obs.weight.val
@@ -99,7 +100,8 @@ def weighted_average_visibilities(obs_list, decimals=8):
                     "sum_w": np.zeros(vis[:, i, :].shape, dtype=wgt.dtype),
                     "time": 0,
                     "ant1": -1,
-                    "ant2": -1
+                    "ant2": -1,
+                    "total_ifs": 0
                 }
 
             m = valid[:, i, :]               # shape (2, 1)
@@ -111,14 +113,15 @@ def weighted_average_visibilities(obs_list, decimals=8):
 
             groups[key]["sum_vw"] += vi * wi
             groups[key]["sum_w"] += wi
-
+            groups[key]["total_ifs"] += 1
+            
             # Store the first valid time, ant1, ant2 for this UVW group
             if groups[key]["time"] == 0:
                 groups[key]["time"] = float(obs.time[i])
                 groups[key]["ant1"] = obs.ant1[i]
                 groups[key]["ant2"] = obs.ant2[i]
 
-
+    groups = OrderedDict((k, v) for k, v in groups.items() if v.get("total_ifs") == n_obs)
     m = len(groups)
 
     vis_avg = np.zeros((obs_list[0].vis.val.shape[0], m, 1), dtype=obs_list[0].vis.val.dtype)
@@ -168,7 +171,7 @@ def get_observation(store_dir, source, filename, polarizations="stokesi"):
 
     while spectral_window < 100: # Avoiding infinite loop
         try:
-            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=spectral_window, polarizations=polarizations, ignore_flags=True)[0]
+            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=spectral_window, polarizations=polarizations, ignore_flags=False)[0]
             observations.append(obs)
             spectral_window += 1
         except Exception as e:
@@ -176,7 +179,7 @@ def get_observation(store_dir, source, filename, polarizations="stokesi"):
     
     if len(observations) == 0:
         try:
-            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations="all", ignore_flags=True)[0]
+            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations="all", ignore_flags=False)[0]
         except Exception as e:
             raise RuntimeError(f"Cannot load observation into resolve. Error: {e}")
     

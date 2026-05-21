@@ -74,6 +74,8 @@ starting_time = datetime.datetime.now()
 
 ### 1. loading data
 obs = get_observation("./ms_data", source_name, filename, polarizations)
+
+ndof = obs.vis.val.flatten().shape[0]
         
 tmin, tmax = rve.tmin_tmax(obs)
 obs = obs.move_time(-tmin)
@@ -157,12 +159,13 @@ if map_flag:
 
             sample_multifield = list(sl.iterator())[0]
             map_likelihood = likelihood(sample_multifield).val
+            chi2 = 2 * map_likelihood / ndof
 
             sky_map = sl.average(sky).val.T[:, :, 0, 0, 0] / (206265 ** 2 * 1000 ** 2)
             noise_level = noise_level_estimation(sky_map)
             sky_pos_mean = plt.pcolormesh(X, Y, np.log10(sky_map), cmap="inferno", vmin=np.log10(noise_level))
             plt.colorbar(sky_pos_mean, label=r"$\log_{10}[I \ (\text{Jy/mas}^2)]$")
-            plt.title(f"MAP {source_name} {date} seed={seed}, likelihood={map_likelihood:.0f}", fontsize=12)
+            plt.title(f"MAP {source_name} {date} seed={seed}, chi^2_red={chi2:.3f}", fontsize=12)
             plt.xlabel("Relative RA (mas)", fontsize=11)
             plt.ylabel("Relative Dec (mas)", fontsize=11)
             plt.gca().invert_xaxis()
@@ -211,12 +214,13 @@ def inspect_callback_vi(sl, iglobal):
     if iglobal + 1 == n_iterations_vi:
         vi_samples_multifield = list(sl.iterator())
         average_likelihood = sum([likelihood(vi_sample_multifield).val for vi_sample_multifield in vi_samples_multifield]) / len(vi_samples_multifield)
-
+        chi2 = 2 * average_likelihood / ndof
+        
         sky_map = sl.average(sky).val.T[:, :, 0, 0, 0] / (206265 ** 2 * 1000 ** 2)
         noise_level = noise_level_estimation(sky_map)
         sky_pos_mean = plt.pcolormesh(X, Y, np.log10(sky_map), cmap="inferno", vmin=np.log10(noise_level))
         plt.colorbar(sky_pos_mean, label=r"$\log_{10}[I \ (\text{Jy/mas}^2)]$")
-        plt.title(f"VI {source_name} {date}, seed {seed}, {map_message}, likelihood={average_likelihood:.0f}", fontsize=12)
+        plt.title(f"VI {source_name} {date}, seed {seed}, {map_message}, chi^2_red={chi2:.3f}", fontsize=12)
         plt.xlabel("Relative RA (mas)", fontsize=11)
         plt.ylabel("Relative Dec (mas)", fontsize=11)
         plt.gca().invert_xaxis()
@@ -264,7 +268,7 @@ append_message(f"{get_current_time_str()}: Finished VI for source {source_name},
 
 if not map_flag:
     final_map_likelihood = pd.NA
-row_dict = {"seed": seed, "MAP": map_flag, "MAP_likelihood": final_map_likelihood, "VI_likelihood": average_likelihood, "time_hours": timedelta.total_seconds() / 3600}
+row_dict = {"seed": seed, "MAP": map_flag, "MAP_likelihood": final_map_likelihood, "VI_likelihood": average_likelihood, "ndof": ndof, "time_hours": timedelta.total_seconds() / 3600}
 safe_append_row(central_csv_log, row_dict)
 
 create_gain_plots(root_save_directory, obs, source_name, dir_name, seed)
