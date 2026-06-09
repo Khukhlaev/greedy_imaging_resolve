@@ -44,7 +44,7 @@ def border_mask(shape):
     return mask
 
 def noise_level_estimation(image):
-    """Estimate noise level as 5 times rms pixel value of the image in the region without source emission. image shoud be a 2d array."""
+    """Estimate noise level as 3 times rms pixel value of the image in the region without source emission. image shoud be a 2d array."""
     noise_mask = border_mask(image.shape)
     return np.sqrt(np.mean(image[noise_mask] ** 2)) * 3  # "3-rms" threshold
 

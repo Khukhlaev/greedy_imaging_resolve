@@ -220,7 +220,7 @@ def inspect_callback_vi(sl, iglobal):
         noise_level = noise_level_estimation(sky_map)
         sky_pos_mean = plt.pcolormesh(X, Y, np.log10(sky_map), cmap="inferno", vmin=np.log10(noise_level))
         plt.colorbar(sky_pos_mean, label=r"$\log_{10}[I \ (\text{Jy/mas}^2)]$")
-        plt.title(f"VI {source_name} {date}, seed {seed}, {map_message}, chi^2_red={chi2:.3f}", fontsize=12)
+        plt.title(f"VI {source_name} - {dir_name}, seed {seed}, {map_message}, chi^2_red={chi2:.3f}", fontsize=12)
         plt.xlabel("Relative RA (mas)", fontsize=11)
         plt.ylabel("Relative Dec (mas)", fontsize=11)
         plt.gca().invert_xaxis()

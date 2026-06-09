@@ -119,12 +119,6 @@ os.makedirs("./tmp_configs", exist_ok=True)
 
 print(f"\nStarting imaging at {datetime.datetime.now()}. Total runs to conduct: {n_map_runs + n_vi_standalone_runs}. Using up to {MAX_CONC} concurrent runs.")
 
-# Estimating runtime based on the number of pixels and number of runs, assuming 4 hours for 512x512
-n_pix = provided_arguments['npix'] if 'npix' in provided_arguments else cfg['sky'].getint('n_pixels_x')
-estimated_time_hours = (n_map_runs + n_vi_standalone_runs) * 4 * (n_pix / 512) ** 2 / min(MAX_CONC, n_map_runs + n_vi_standalone_runs)
-print(f"Rough estimated runtime: {estimated_time_hours:.1f} hours, based on the quadratic scaling with the number of pixels. The actual runtime may vary significantly based on the specific data and hardware used.\n")
-
-
 def submit_run(idx):
     map_flag = True if idx < n_map_runs else False
 

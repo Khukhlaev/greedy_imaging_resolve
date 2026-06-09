@@ -179,10 +179,11 @@ def get_observation(store_dir, source, filename, polarizations="stokesi"):
     
     if len(observations) == 0:
         try:
-            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations="all", ignore_flags=False)[0]
+            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations=polarizations, ignore_flags=False)[0]
         except Exception as e:
             raise RuntimeError(f"Cannot load observation into resolve. Error: {e}")
-    
+        return obs
+
     if len(observations) == 1:
         return observations[0]
     
