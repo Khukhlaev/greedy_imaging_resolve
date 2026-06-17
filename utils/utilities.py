@@ -59,102 +59,6 @@ def get_source_date(uvf_path: str) -> tuple:
 
     return header['OBJECT'], header['DATE-OBS'].replace('-', '_')
 
-
-def weighted_average_visibilities(obs_list, decimals=8):
-    """
-    Weighted average of visibilities, handling possible skipped uvw points for some spectral windows.
-
-    Parameters
-    ----------
-    obs_list : list of rve.Observation 
-        list of observations to combine
-
-    Returns
-    -------
-    averaged_obs : rve.Observation
-        observation with correctly averaged visibilies
-    """
-    groups = OrderedDict()
-
-
-    n_obs = len(obs_list)
-    for obs in obs_list:
-        vis = obs.vis.val
-        wgt = obs.weight.val
-        uvw = obs.uvw
-
-        if vis.shape != wgt.shape:
-            raise ValueError("vis and wgt must have the same shape")
-        if uvw.shape != (vis.shape[1], 3):
-            raise ValueError("uvw must have shape (N, 3)")
-        
-        valid = np.isfinite(vis) & np.isfinite(wgt) & (wgt > 0)
-
-        for i in range(vis.shape[1]):
-            # Group by UVW, rounded
-            key = tuple(np.round(uvw[i], decimals=decimals))
-
-            if key not in groups:
-                groups[key] = {
-                    "sum_vw": np.zeros(vis[:, i, :].shape, dtype=vis.dtype),
-                    "sum_w": np.zeros(vis[:, i, :].shape, dtype=wgt.dtype),
-                    "time": 0,
-                    "ant1": -1,
-                    "ant2": -1,
-                    "total_ifs": 0
-                }
-
-            m = valid[:, i, :]               # shape (2, 1)
-            if not np.any(m):
-                continue
-
-            wi = np.where(m, wgt[:, i, :], 0.0)
-            vi = np.where(m, vis[:, i, :], 0.0)
-
-            groups[key]["sum_vw"] += vi * wi
-            groups[key]["sum_w"] += wi
-            groups[key]["total_ifs"] += 1
-            
-            # Store the first valid time, ant1, ant2 for this UVW group
-            if groups[key]["time"] == 0:
-                groups[key]["time"] = float(obs.time[i])
-                groups[key]["ant1"] = obs.ant1[i]
-                groups[key]["ant2"] = obs.ant2[i]
-
-    groups = OrderedDict((k, v) for k, v in groups.items() if v.get("total_ifs") == n_obs)
-    m = len(groups)
-
-    vis_avg = np.zeros((obs_list[0].vis.val.shape[0], m, 1), dtype=obs_list[0].vis.val.dtype)
-    wgt_new = np.zeros((obs_list[0].vis.val.shape[0], m, 1), dtype=obs_list[0].weight.val.dtype)
-    uvw_new = np.zeros((m, 3), dtype=obs_list[0].uvw.dtype)
-    time_new = np.zeros(m, dtype=obs_list[0].time.dtype)
-    ant1_new = np.zeros(m, dtype=obs_list[0].ant1.dtype)
-    ant2_new = np.zeros(m, dtype=obs_list[0].ant2.dtype)
-
-    for j, (key, acc) in enumerate(groups.items()):
-        sw = acc["sum_w"]
-        svw = acc["sum_vw"]
-
-        out = np.zeros_like(svw, dtype=obs_list[0].vis.val.dtype)
-        np.divide(svw, sw, out=out, where=sw > 0)
-        vis_avg[:, j, :] = out
-
-        wgt_new[:, j, :] = sw
-        uvw_new[j] = np.array(key, dtype=obs_list[0].uvw.dtype)
-        time_new[j] = acc["time"]
-        ant1_new[j] = acc["ant1"]
-        ant2_new[j] = acc["ant2"]
-
-
-    sorted_time_indices = np.argsort(time_new)
-    averaged_obs = obs_list[0]
-    averaged_obs._weight = wgt_new[:, sorted_time_indices, :]
-    averaged_obs._vis = vis_avg[:, sorted_time_indices, :]
-    averaged_obs._antpos = rve.AntennaPositions(uvw_new[sorted_time_indices, :], ant1_new[sorted_time_indices], ant2_new[sorted_time_indices], time_new[sorted_time_indices])
-
-    return averaged_obs
-
-
 def get_observation(store_dir, source, filename, polarizations="stokesi"):
     """
     Get observation, correctly averaging spectral windows. 
@@ -166,28 +70,9 @@ def get_observation(store_dir, source, filename, polarizations="stokesi"):
     if not os.path.exists(ms_path):
         raise FileNotFoundError(f"ms data file does not exist: {ms_path}")
 
-    observations = []
-    spectral_window = 0
-
-    while spectral_window < 100: # Avoiding infinite loop
-        try:
-            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=spectral_window, polarizations=polarizations, ignore_flags=False)[0]
-            observations.append(obs)
-            spectral_window += 1
-        except Exception as e:
-            break
-    
-    if len(observations) == 0:
-        try:
-            obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations=polarizations, ignore_flags=False)[0]
-        except Exception as e:
-            raise RuntimeError(f"Cannot load observation into resolve. Error: {e}")
-        return obs
-
-    if len(observations) == 1:
-        return observations[0]
-    
-    return weighted_average_visibilities(observations)
+    # Using ignore_flags=True, since we already handled flagging when combining SPWs with CASA
+    obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations=polarizations, ignore_flags=True)[0]
+    return obs
 
 
 def append_message(text: str, file, other_file = None) -> None:
