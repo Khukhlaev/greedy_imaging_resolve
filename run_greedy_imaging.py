@@ -65,10 +65,11 @@ else:
         sys.exit()
 
 
-# Setting up directory to store data. Hardcoded to be "./ms_data/{source}/{filename}.ms", where filename is the name of the data file without the extension. This can be easily changed if needed, but it is not expected that users will provide their own data files, so it should not cause any issues.
+# Setting up directory to store data. Hardcoded to be "./ms_data/{source}/{filename}.ms", where filename is the name of the data file without the extension.
 data_store_dir = "./ms_data"
 os.makedirs(data_store_dir, exist_ok=True)
 os.makedirs(os.path.join(data_store_dir, source), exist_ok=True)
+os.makedirs(os.path.join(data_store_dir, "tmp"), exist_ok=True)
 
 # Transforming data to ms format
 proc = subprocess.run(["python","transform_data.py","--data_file",str(data_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
