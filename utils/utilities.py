@@ -70,8 +70,13 @@ def get_observation(store_dir, source, filename, polarizations="stokesi"):
     if not os.path.exists(ms_path):
         raise FileNotFoundError(f"ms data file does not exist: {ms_path}")
 
-    # Using ignore_flags=True, since we already handled flagging when combining SPWs with CASA
-    obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations=polarizations, ignore_flags=True)[0]
+    # First, trying ingnore_flags=False. If only one SPW was present in the data, then the flags are handled correctly (no CASA averaging)
+    obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations=polarizations, ignore_flags=False)[0]
+
+    if obs is None: # Happens when the data has multiple SPWs and CASA averaged them
+        # Using ignore_flags=True, since we already handled flagging when combining SPWs with CASA
+        obs = rve.ms2observations(ms=ms_path, data_column="DATA", with_calib_info=True, spectral_window=0, polarizations=polarizations, ignore_flags=True)[0]
+
     return obs
 
 
